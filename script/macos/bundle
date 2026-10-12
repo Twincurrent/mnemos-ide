@@ -333,17 +333,16 @@ DOCK_TILE_PLUGIN_DIR="target/$TARGET_PROFILE_DIR/MnemosDockTilePlugin.docktilepl
 # every macOS build of the app and leaves the result in target/<profile>/MnemosDockTilePlugin.docktileplugin
 # (a universal arm64 + x86_64 bundle). Copy that fresh build; with --skip-build and no build output,
 # run the Makefile here.
+# app/build.rs only reruns when the plugin's sources change, so a cached build leaves nothing
+# behind once target/<profile> is cleaned; the Makefile fallback covers that. The built plugin
+# already sits at $DOCK_TILE_PLUGIN_DIR, so it is never deleted before the copy into the bundle.
 resolve_dock_tile_plugin() {
-    local built="target/$TARGET_PROFILE_DIR/MnemosDockTilePlugin.docktileplugin"
-    if [[ ! -d "$built" ]]; then
+    if [[ ! -d "$DOCK_TILE_PLUGIN_DIR" ]]; then
         echo "Building the dock tile plugin from app/DockTilePlugin"
         make -C app/DockTilePlugin clean all
-        mkdir -p "target/$TARGET_PROFILE_DIR"
-        rm -rf "$built"
-        mv app/DockTilePlugin/MnemosDockTilePlugin.docktileplugin "$built"
+        mkdir -p "$(dirname "$DOCK_TILE_PLUGIN_DIR")"
+        mv app/DockTilePlugin/MnemosDockTilePlugin.docktileplugin "$DOCK_TILE_PLUGIN_DIR"
     fi
-    rm -rf "$DOCK_TILE_PLUGIN_DIR"
-    cp -R "$built" "$DOCK_TILE_PLUGIN_DIR"
 }
 
 # Handle specific architecture targeting
