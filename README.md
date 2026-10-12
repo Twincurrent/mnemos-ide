@@ -101,10 +101,13 @@ Session restore, the sessions list and transcript sync work with Claude Code onl
 
 ## Install
 
-Signed downloads are coming: there are no public release downloads yet, and no Homebrew or winget
-package. Until then, build from source. A build from source does not update itself; see
-`PACKAGING.md`. Once releases exist, each one has `SHA256SUMS` and a signature over it, and
-`PACKAGING.md` ("Verifying downloads") shows how to check them.
+- **macOS (Apple silicon):** download `Mnemos-arm64.dmg` from
+  [Releases](https://github.com/Twincurrent/mnemos-ide/releases). It updates itself after that.
+- **Windows:** the installer is not published yet; build from source.
+
+There is no Homebrew or winget package. A build from source does not update itself; see
+`PACKAGING.md`. Each release has `SHA256SUMS` and a signature over it, and `PACKAGING.md`
+("Verifying downloads") shows how to check them.
 
 ### Build from source
 
