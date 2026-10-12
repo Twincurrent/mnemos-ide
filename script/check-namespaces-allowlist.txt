@@ -33,3 +33,4 @@ docs/upstream-diff.md ^\| Server endpoints \| `app/build.rs` bakes a stable chan
 resources/linux/rpm/app/mnemos.spec.template ^# repository \(releases\.warp\.dev\) here\.
 script/linux/bundle_deb ^# added Warp's apt repository \(releases\.warp\.dev\)\.
 script/linux/bundle_rpm ^# public key from releases\.warp\.dev\)\.
+script/oss/export-public.sh which Denver Technologies, Inc\. publishes under the
