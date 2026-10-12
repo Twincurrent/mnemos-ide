@@ -1,0 +1,13 @@
+# Paths script/oss/export-public.sh leaves out of the public tree. One path or
+# glob per line, relative to the repo root. Owner-only material should not be
+# committed at all (see .gitignore); this list is the second line of defence
+# for anything still tracked or committed by mistake.
+plans/
+.claude/
+.twincurrent-build/
+.build-logs/
+HANDOVER.md
+wireframes/
+.mcp.json
+CLAUDE.local.md
+.env*

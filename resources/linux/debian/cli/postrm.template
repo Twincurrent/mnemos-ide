@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# The action ("remove" or "purge") is passed as the first argument to the
+# postrm script.
+action="$1"
+
+# Only remove the /usr/bin link when it is ours, so that removing this package
+# never deletes another program's command.
+link=/usr/bin/@@BINARY_NAME@@
+target="$(readlink "$link" 2>/dev/null || true)"
+case "$target" in
+	@@OPTDIR@@/*)
+		rm -f "$link"
+		;;
+esac

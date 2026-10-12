@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mnemos · Peaks · Master (1024×1024 icon-only)
+  Three angular mountains. Sun upper-right, shadows fall left.
+  Tall central copper peak, two smaller stone peaks flanking.
+  ~10% padding for AppIcon safe-zone convention.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Copper face (tall central peak, sun-lit) -->
+    <linearGradient id="pk-cu-lit" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#fde68a"/>
+      <stop offset="40%"  stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#92400e"/>
+    </linearGradient>
+    <!-- Copper shadow face -->
+    <linearGradient id="pk-cu-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#92400e"/>
+      <stop offset="100%" stop-color="#451a03"/>
+    </linearGradient>
+
+    <!-- Stone lit face -->
+    <linearGradient id="pk-st-lit" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#d6d3d1"/>
+      <stop offset="100%" stop-color="#57534e"/>
+    </linearGradient>
+    <!-- Stone shadow face -->
+    <linearGradient id="pk-st-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#44403c"/>
+      <stop offset="100%" stop-color="#1c1917"/>
+    </linearGradient>
+
+    <!-- Sky / background gradient (soft pre-dawn) -->
+    <linearGradient id="pk-sky" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0c0a09"/>
+    </linearGradient>
+
+    <!-- Soft glow on the sun -->
+    <radialGradient id="pk-sun" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#fef3c7"/>
+      <stop offset="60%"  stop-color="#fbbf24" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background plate with slight rounding (icon-shaped square) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="180" fill="url(#pk-sky)"/>
+
+  <!-- Sun (upper-right, behind the peaks) -->
+  <circle cx="800" cy="280" r="120" fill="url(#pk-sun)"/>
+  <circle cx="800" cy="280" r="38"  fill="#fef3c7" opacity="0.95"/>
+
+  <!-- LEFT peak (smaller, stone, behind central peak) -->
+  <!-- Lit face -->
+  <polygon points="280,460 130,820 420,820" fill="url(#pk-st-lit)"/>
+  <!-- Shadow face (left side of the peak) -->
+  <polygon points="280,460 130,820 280,820" fill="url(#pk-st-shadow)" opacity="0.95"/>
+
+  <!-- RIGHT peak (smaller, stone, behind central peak) -->
+  <!-- Lit face -->
+  <polygon points="744,460 894,820 604,820" fill="url(#pk-st-lit)"/>
+  <!-- Shadow face -->
+  <polygon points="744,460 604,820 744,820" fill="url(#pk-st-shadow)" opacity="0.95"/>
+
+  <!-- CENTRAL peak (tallest, copper, in front) -->
+  <!-- Lit face -->
+  <polygon points="512,200 322,820 702,820" fill="url(#pk-cu-lit)"/>
+  <!-- Shadow face -->
+  <polygon points="512,200 322,820 512,820" fill="url(#pk-cu-shadow)" opacity="0.95"/>
+
+  <!-- Subtle ridge line accent on the central peak -->
+  <line x1="512" y1="200" x2="512" y2="820" stroke="#fef3c7" stroke-width="3" opacity="0.18"/>
+
+  <!-- Ground horizon -->
+  <line x1="120" y1="820" x2="904" y2="820" stroke="#fafaf9" stroke-width="3" opacity="0.10"/>
+</svg>

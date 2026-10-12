@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# Run this after script/macos/bootstrap on a machine that cuts macOS releases
+# (script/macos/release, see RELEASING.md). Contributors do not need it.
+
+set -e
+
+if ! command -v brew >/dev/null; then
+    echo "Run script/macos/bootstrap first."
+    exit 1
+fi
+
+# The DMG that script/macos/bundle builds.
+brew install create-dmg
+
+# Signing and notarization need an Apple Developer ID certificate in the login keychain (or the
+# MNEMOS_DEVELOPER_ID_CERT* variables script/macos/bundle reads) and notarytool credentials.
+# Neither can be installed by a script; RELEASING.md lists them.
+if ! security find-identity -p codesigning -v | grep -q "Developer ID Application"; then
+    echo "Note: no Developer ID Application identity found; release builds cannot be signed yet."
+fi

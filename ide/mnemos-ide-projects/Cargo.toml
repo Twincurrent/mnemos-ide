@@ -1,0 +1,29 @@
+[package]
+name = "mnemos-ide-projects"
+version = "0.0.1"
+edition = "2021"
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+mnemos-ide-core = { path = "../mnemos-ide-core" }
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "fs", "sync", "macros"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0.17"
+tracing = "0.1.40"
+notify = "6.1"
+chrono = { version = "0.4.38", features = ["serde"] }
+dirs = "6.0.0"
+# resolve.rs: the discovery cache ages on a monotonic clock; the workspace's
+# clippy config disallows std::time::Instant.
+instant.workspace = true
+
+[dev-dependencies]
+tempfile = "3.8.0"
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "fs", "sync", "macros", "test-util"] }
+chrono = { version = "0.4.38", features = ["serde"] }

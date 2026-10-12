@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mnemos · Peaks · Wordmark (horizontal lockup)
+  Peaks mark on the left, MNEMOS wordmark to the right. For navbar /
+  splash / about-page placement.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" width="600" height="200">
+  <defs>
+    <linearGradient id="wm-cu-lit" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#fde68a"/><stop offset="40%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#7c2d12"/>
+    </linearGradient>
+    <linearGradient id="wm-cu-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c2d12"/><stop offset="100%" stop-color="#451a03"/>
+    </linearGradient>
+    <linearGradient id="wm-st-lit" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#d6d3d1"/><stop offset="100%" stop-color="#57534e"/>
+    </linearGradient>
+    <linearGradient id="wm-st-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#44403c"/><stop offset="100%" stop-color="#1c1917"/>
+    </linearGradient>
+  </defs>
+  <!-- Mark, scaled into a 160×160 area at left -->
+  <g transform="translate(20 20) scale(0.156)">
+    <polygon points="280,460 130,820 420,820" fill="url(#wm-st-lit)"/>
+    <polygon points="280,460 130,820 280,820" fill="url(#wm-st-shadow)" opacity="0.92"/>
+    <polygon points="744,460 894,820 604,820" fill="url(#wm-st-lit)"/>
+    <polygon points="744,460 604,820 744,820" fill="url(#wm-st-shadow)" opacity="0.92"/>
+    <polygon points="512,200 322,820 702,820" fill="url(#wm-cu-lit)"/>
+    <polygon points="512,200 322,820 512,820" fill="url(#wm-cu-shadow)" opacity="0.95"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="200" y="118"
+        font-family="'DM Sans', system-ui, sans-serif"
+        font-size="56"
+        font-weight="500"
+        fill="#1c1917"
+        letter-spacing="14">MNEMOS</text>
+</svg>

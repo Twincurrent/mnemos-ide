@@ -1,0 +1,18 @@
+{
+  "name": "mnemos",
+  "description": "Mnemos IDE integrations for Claude Code, published from the Mnemos source repository",
+  "owner": {
+    "name": "TwinCurrent",
+    "url": "https://twincurrent.dk"
+  },
+  "plugins": [
+    {
+      "name": "mnemos-agents",
+      "description": "Streams Claude Code session events (cwd, prompts, responses, tool calls, permission/idle state) to the Mnemos agents panel via OSC 777.",
+      "source": "./ide/claude-plugin/plugins/mnemos-agents",
+      "version": "1.2.0",
+      "category": "productivity",
+      "tags": ["mnemos", "terminal", "agents", "notifications"]
+    }
+  ]
+}

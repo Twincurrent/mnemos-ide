@@ -1,0 +1,1003 @@
+#!/bin/bash
+#
+# Bundle the application for distribution.
+#
+# See the parameter parsing section below for available options.
+#
+# Note that there are several steps to complete before the app is ready to
+# be distributed, one of which is asynchronous and requires apple to process
+# our binary.
+#
+# The exact steps depend on which artifact we are building, the desktop app or the CLI. Overall,
+# the steps are:
+#
+# 1) Create the binary or mac bundle by running `cargo`.
+# 2) Create a keychain based on our distribution cert.
+# 3) Codesign the built artifact using the keychain.
+#
+# Additionally, for an app, we create a dmg:
+# 4) Create the dmg using `hdiutil create`.
+# 5) Codesign our dmg using the keychain.
+# 6) Upload the app to Apple for it to be notarized - this is async, and we
+#    poll until it is done.
+# 7) "Staple" the notarization to the dmg.
+#
+# Once the stapling is done, the app can be shared.
+#
+# Three passwords are read from GCP Secret Manager (or from env if --read-passwords-from-env is set) if you are codesigning.
+# 1) MNEMOS_NOTARIZATION_PASSWORD:  This is an "app-specific password" that
+#    is tied to the TwinCurrent Apple Developer account.  See https://support.apple.com/en-us/HT204397
+# 2) MNEMOS_DEVELOPER_ID_CERT_PASSWORD: This is a password tied to the private key
+#    of our cert - it is needed to use the cert to sign our binary.
+# 3) MNEMOS_CODESIGN_KEYCHAIN_PASSWORD: This is an arbitrary password only used
+#    in the lifetime of this app for creating the keychain used to sign.  Can
+#    be anything.
+#
+# See
+# https://github.com/burtonageo/cargo-bundle
+# https://wiki.lazarus.freepascal.org/Code_Signing_for_macOS
+# https://wiki.lazarus.freepascal.org/Notarization_for_macOS_10.14.5%2B
+# https://developer.apple.com/developer-id/
+# https://github.com/atom/atom/blob/976cb9ef3a611163052f9d31c6c3685dc1e6c5b4/script/lib/code-sign-on-mac.js
+
+set -e
+
+# Determine the repository root directory
+WORKSPACE_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# This is used to set the minimum deployment target for mac
+# https://cmake.org/cmake/help/latest/envvar/MACOSX_DEPLOYMENT_TARGET.html
+# If unset, it uses the system one, but we want to build for older versions
+# of mac os by default.
+#
+# This should be kept in sync with the definition of this variable in
+# `.cargo/config.toml`.
+export MACOSX_DEPLOYMENT_TARGET="11.0"
+
+# Constants used later in the script.
+INTEL_ARCH="x86_64"
+INTEL_TARGET="$INTEL_ARCH-apple-darwin"
+ARM_ARCH="aarch64"
+ARM_TARGET="$ARM_ARCH-apple-darwin"
+DEFAULT_ARCH="$(rustc --print cfg | grep target_arch)"
+
+# Function to clean up temporary DMG files
+cleanup_dmg_files() {
+    local target_dir="$1"
+    if [ -d "$target_dir" ]; then
+        echo "Cleaning up temporary DMG files in $target_dir"
+        find "$target_dir" -name "*.dmg" -type f -delete
+        find "$target_dir" -name "rw.*.dmg" -type f -delete
+    fi
+    # Also check if any volumes are mounted and unmount them
+    hdiutil info | grep "/Volumes/Mnemos.*" | awk '{print $1}' | while read -r disk; do
+        echo "Unmounting disk image: $disk"
+        hdiutil detach "$disk" -force || true
+    done
+}
+
+# Clean up the temporary codesigning keychain.
+cleanup_codesign_keychain() {
+    # Mnemos IDE: put the user's keychain search list back the way it was before signing.
+    if [[ "${KEYCHAIN_LIST_SAVED:-false}" = true ]]; then
+        security list-keychains -d user -s ${ORIGINAL_KEYCHAIN_LIST[@]+"${ORIGINAL_KEYCHAIN_LIST[@]}"} \
+            || echo "Could not restore the keychain search list."
+    fi
+    if [[ "${CODESIGN:-false}" = true && -n "${CODESIGN_KEYCHAIN_NAME:-}" ]]; then
+        echo "Cleaning up by deleting $CODESIGN_KEYCHAIN_NAME keychain."
+        security delete-keychain "$CODESIGN_KEYCHAIN_NAME" || echo "No keychain to delete or already deleted."
+    fi
+}
+
+# Set up cleanup trap
+trap 'cleanup_dmg_files "$DMG_DIR"; cleanup_codesign_keychain' EXIT
+
+# Define a helper function that uses Python to compute a relative path.
+function relpath() {
+  python -c "import os,sys;print(os.path.relpath(*(sys.argv[1:])))" "$@";
+}
+
+# Defaults for command-line flags.
+# Mnemos is arm64-only on macOS (Apple Silicon required). We never ship
+# universal/Intel binaries — the default is single-arch arm64.
+UNIVERSAL_BINARY=false
+BUILD_BINARY=true
+TARGET_ARCH=""
+DMG_NAME_SUFFIX=""
+# By default we build dev bundles.
+RELEASE_CHANNEL="dev"
+FEATURES="release_bundle,extern_plist"
+REGISTER_SERVICES=true
+DEBUG=false
+ARTIFACT="app"
+CODESIGN=true
+SELFSIGN=false
+OPEN_AFTER_BUNDLE=false
+READ_PASSWORDS_FROM_ENV=false
+
+PARAMS=""
+while (( "$#" )); do
+  case "$1" in
+    # Speed up compilation time by only compiling a debug version of the app,
+    # rather than a release version
+    --debug)
+      DEBUG=true
+      shift
+      ;;
+    # Only run `cargo check` without producing a bundle
+    --check-only)
+      echo 'Only running `cargo check` and not producing a bundle.'
+      CHECK_ONLY="true"
+      shift
+      ;;
+    # Skip building the binary (assume it's already built)
+    --skip-build)
+      echo "Skipping binary build step."
+      BUILD_BINARY=false
+      shift
+      ;;
+    # Skip code signing process
+    --nosign)
+      echo "Skipping code signing."
+      CODESIGN=false
+      SELFSIGN=false
+      shift
+      ;;
+    # Sign with a local Apple Development cert instead of the official Mnemos cert.
+    # Useful for local debug builds when you don't have access to the company signing key.
+    # MNEMOS_MACOS_SIGNING_IDENTITY pins the identity (see select_signing_identity). Falls back
+    # to ad-hoc signing if no Apple Development cert is found, unless MNEMOS_SELFSIGN_STRICT=1 or
+    # MNEMOS_MACOS_SIGNING_TEAM is set, in which case that is an error.
+    --selfsign)
+      echo "Self-signing enabled."
+      CODESIGN=false
+      SELFSIGN=true
+      shift
+      ;;
+    # Build only for the default target architecture instead of universal binary
+    # (Default behavior; retained for backwards compatibility with callers/CI.)
+    --nouniversal)
+      echo "Only building for default target (already the default), not a universal binary."
+      UNIVERSAL_BINARY=false
+      shift
+      ;;
+    # Reject explicit requests for a universal binary. Mnemos is arm64-only on
+    # macOS (Apple Silicon required); we no longer ship Intel.
+    --universal)
+      echo "Error: --universal is no longer supported. Mnemos is arm64-only on macOS." >&2
+      echo "       Pass --arch aarch64 (default) or omit the flag entirely." >&2
+      exit 1
+      ;;
+    # Build only for a specific architecture (implies --nouniversal)
+    --arch)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        if [ "$2" = "x86_64" -o "$2" = "aarch64" ]; then
+          echo "Building for specific architecture: $2"
+          TARGET_ARCH=$2
+          UNIVERSAL_BINARY=false
+          shift 2
+        else
+          echo "Error: --arch must be either x86_64 or aarch64, got '$2'" >&2
+          exit 1
+        fi
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    # Set a custom suffix for the DMG file
+    --dmg-name-suffix)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        echo "Setting custom DMG name suffix to $2"
+        DMG_NAME_SUFFIX=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    # Open the parent directory after bundling completes.
+    -o|--open)
+      OPEN_AFTER_BUNDLE=true
+      shift
+      ;;
+    # Specify the release channel (local, dev, preview, stable)
+    -c|--channel)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        RELEASE_CHANNEL=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    # Set a specific Git release tag for the build
+    --release-tag)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        echo "Setting release tag to $2"
+        export GIT_RELEASE_TAG=$2
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    # Read codesigning passwords from environment variables instead of GCP secret manager
+    --read-passwords-from-env)
+        echo "Reading codesigning passwords from env."
+        READ_PASSWORDS_FROM_ENV=true
+        shift
+        ;;
+    --features)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        echo "Adding Cargo features: $2"
+        FEATURES="$FEATURES,$2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    --artifact)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        if [[ "$2" != "app" && "$2" != "cli" ]]; then
+          echo "Error: --artifact must be either 'app' or 'cli', got '$2'" >&2
+          exit 1
+        fi
+        ARTIFACT="$2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    *) # preserve positional arguments
+      PARAMS="$PARAMS $1"
+      shift
+      ;;
+  esac
+done
+# set positional arguments in their proper place
+eval set -- "$PARAMS"
+
+# Infer a cargo profile from the bundle configuration.
+if [[ $DEBUG = true ]]; then
+  CARGO_PROFILE="dev"
+elif [[ $RELEASE_CHANNEL = "local" || $RELEASE_CHANNEL = "dev" ]]; then
+  # For dev bundles, we want to enable debug assertions to
+  # catch violations that would otherwise silently pass in
+  # a normal release build (e.g. in stable).
+  if [[ "$ARTIFACT" == "cli" ]]; then
+    CARGO_PROFILE="release-cli-debug_assertions"
+  else
+    CARGO_PROFILE="release-lto-debug_assertions"
+  fi
+else
+  if [[ "$ARTIFACT" == "cli" ]]; then
+    CARGO_PROFILE="release-cli"
+  else
+    CARGO_PROFILE="release-lto"
+  fi
+fi
+
+TARGET_PROFILE_DIR="$CARGO_PROFILE"
+if [[ "$CARGO_PROFILE" == "dev" ]]; then
+  TARGET_PROFILE_DIR="debug"
+fi
+
+if [[ $RELEASE_CHANNEL = "local" ]]; then
+    MNEMOS_BIN="mnemos"
+    BUNDLE_ID="dev.mnemos.Mnemos-Local"
+    MNEMOS_APP_NAME="MnemosLocal"
+    MNEMOS_SCHEME_NAME="mnemoslocal"
+    FEATURES="$FEATURES,agent_mode_debug"
+    # For local builds, use different versions of our bundled frameworks (e.g.:
+    # Sentry).  This needs to be exported so it can be referenced by
+    # app/build.rs later, while running `cargo bundle`.
+    export FRAMEWORK_OVERRIDE="dev"
+elif [[ $RELEASE_CHANNEL = "dev" ]]; then
+    MNEMOS_BIN="dev"
+    BUNDLE_ID="dev.mnemos.Mnemos-Dev"
+    MNEMOS_APP_NAME="MnemosDev"
+    MNEMOS_SCHEME_NAME="mnemosdev"
+    FEATURES="$FEATURES,agent_mode_debug"
+    # Enable heap usage tracking & profiling using jemalloc through pprof.
+    FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking"
+    # For dev builds, use different versions of our bundled frameworks (e.g.:
+    # Sentry).  This needs to be exported so it can be referenced by
+    # app/build.rs later, while running `cargo bundle`.
+    export FRAMEWORK_OVERRIDE="dev"
+    export HANDLE_MARKDOWN=1
+elif [[ $RELEASE_CHANNEL = "preview" ]]; then
+    MNEMOS_BIN="preview"
+    BUNDLE_ID="dev.mnemos.Mnemos-Preview"
+    MNEMOS_APP_NAME="MnemosPreview"
+    MNEMOS_SCHEME_NAME="mnemospreview"
+    FEATURES="$FEATURES,preview_channel"
+    # Enable heap usage tracking & profiling using jemalloc through pprof.
+    FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking"
+elif [[ $RELEASE_CHANNEL = "stable" ]]; then
+    MNEMOS_BIN="mnemos"
+    BUNDLE_ID="dev.mnemos.Mnemos"
+    MNEMOS_APP_NAME="Mnemos"
+    MNEMOS_SCHEME_NAME="mnemos"
+fi
+# Mnemos IDE: the separate `oss` channel (mnemos-oss) is retired. A source build of the stable
+# channel carries no telemetry, crash reporting or updater; see PACKAGING.md.
+
+OUT_DIR="target/$TARGET_PROFILE_DIR/bundle/osx"
+DOCK_TILE_PLUGIN_DIR="target/$TARGET_PROFILE_DIR/MnemosDockTilePlugin.docktileplugin"
+
+# The dock tile plugin is built from its source in app/DockTilePlugin, never fetched: an AGPL
+# release has to ship only what its Corresponding Source builds. app/build.rs runs its Makefile on
+# every macOS build of the app and leaves the result in target/<profile>/MnemosDockTilePlugin.docktileplugin
+# (a universal arm64 + x86_64 bundle). Copy that fresh build; with --skip-build and no build output,
+# run the Makefile here.
+resolve_dock_tile_plugin() {
+    local built="target/$TARGET_PROFILE_DIR/MnemosDockTilePlugin.docktileplugin"
+    if [[ ! -d "$built" ]]; then
+        echo "Building the dock tile plugin from app/DockTilePlugin"
+        make -C app/DockTilePlugin clean all
+        mkdir -p "target/$TARGET_PROFILE_DIR"
+        rm -rf "$built"
+        mv app/DockTilePlugin/MnemosDockTilePlugin.docktileplugin "$built"
+    fi
+    rm -rf "$DOCK_TILE_PLUGIN_DIR"
+    cp -R "$built" "$DOCK_TILE_PLUGIN_DIR"
+}
+
+# Handle specific architecture targeting
+if [[ -n "$TARGET_ARCH" ]]; then
+    # Building for a specific architecture
+    if [[ "$TARGET_ARCH" == "$INTEL_ARCH" ]]; then
+        echo "Building specifically for $INTEL_TARGET"
+        DEFAULT_TARGET="$INTEL_TARGET"
+        BUNDLE_DIR="target/$INTEL_TARGET/$TARGET_PROFILE_DIR/bundle/osx"
+    elif [[ "$TARGET_ARCH" == "$ARM_ARCH" ]]; then
+        echo "Building specifically for $ARM_TARGET"
+        DEFAULT_TARGET="$ARM_TARGET"
+        BUNDLE_DIR="target/$ARM_TARGET/$TARGET_PROFILE_DIR/bundle/osx"
+    fi
+else
+    # Mnemos is arm64-only on macOS (Apple Silicon required). Hard-pin the
+    # default target to aarch64-apple-darwin regardless of host arch — this
+    # also lets Intel-host CI runners cross-compile without picking x86_64.
+    echo "Default target is $ARM_TARGET (arm64-only build)"
+    DEFAULT_TARGET="$ARM_TARGET"
+    ADDITIONAL_TARGET="$INTEL_TARGET"
+    BUNDLE_DIR="target/$ARM_TARGET/$TARGET_PROFILE_DIR/bundle/osx"
+fi
+
+# Set artifact-specific configuration.
+if [[ "$ARTIFACT" == cli ]]; then
+  UNIVERSAL_BINARY=false
+  OPEN_AFTER_BUNDLE=false
+  FEATURES="$FEATURES,standalone"
+elif [[ "$ARTIFACT" == app ]]; then
+  FEATURES="$FEATURES,gui,nld_improvements"
+fi
+
+# If we're building a universal bundle for the app artifact, make sure the additional target is available.
+if [[ $UNIVERSAL_BINARY = true ]]; then
+    rustup target add "$ADDITIONAL_TARGET"
+fi
+
+# crates/mnemos_ui's build script shells out to `xcrun metal`, which is a stub that errors
+# unless Xcode's separately-installed MetalToolchain component matches the current Xcode
+# build. Recover from a mismatch before cargo runs, rather than panicking 5 minutes in.
+METAL_SHIM_DIR="$("$WORKSPACE_ROOT_DIR/script/macos/metal_toolchain")"
+if [[ -n "$METAL_SHIM_DIR" ]]; then
+    export PATH="$METAL_SHIM_DIR:$PATH"
+fi
+
+# If we only want to check that compilation will succeed, perform the checks
+# then exit.  We use this script to invoke `cargo check` to ensure that we are
+# using the same feature flags and profile that we would be using in production.
+if [[ "$CHECK_ONLY" == "true" ]]; then
+  cargo check --profile "$CARGO_PROFILE" --bin "$MNEMOS_BIN" --target "$DEFAULT_TARGET" --features "$FEATURES"
+  if [[ $UNIVERSAL_BINARY = true && "$ARTIFACT" != "cli" ]]; then
+    cargo check --profile "$CARGO_PROFILE" --bin "$MNEMOS_BIN" --target "$ADDITIONAL_TARGET" --features "$FEATURES"
+  fi
+  exit 0
+fi
+
+DMG_DIR="$BUNDLE_DIR/dmg/$MNEMOS_BIN"
+DMG_NAME="$MNEMOS_APP_NAME.dmg"
+if [[ -z "$FINAL_DMG_NAME" && -n "$DMG_NAME_SUFFIX" ]]; then
+  FINAL_DMG_NAME="$MNEMOS_APP_NAME-$DMG_NAME_SUFFIX.dmg"
+else
+  FINAL_DMG_NAME="$MNEMOS_APP_NAME.dmg"
+fi
+
+# First clean up and prep the outdir
+mkdir -p "$OUT_DIR"
+rm -R "$OUT_DIR/$MNEMOS_APP_NAME.app" || echo "No old app to remove"
+rm -R "$OUT_DIR/$FINAL_DMG_NAME" || echo "No old dmg to remove"
+
+###########################
+## Step 1: Build the app ##
+###########################
+
+if [[ "$ARTIFACT" == "app" ]]; then
+  if [[ $BUILD_BINARY != true ]]; then
+    echo "Skipping binary build due to --skip-build flag"
+    export CARGO_BUNDLE_SKIP_BUILD=1
+  fi
+
+  pushd app > /dev/null
+  echo "Building and bundling $DEFAULT_TARGET for channel $RELEASE_CHANNEL and bundle id $BUNDLE_ID with profile $CARGO_PROFILE"
+  cargo bundle --profile "$CARGO_PROFILE" --bin "$MNEMOS_BIN" --target "$DEFAULT_TARGET" --features "$FEATURES"
+  popd > /dev/null
+
+  echo "Adding rpath to support mac frameworks (e.g. Sentry)"
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$BUNDLE_DIR/$MNEMOS_APP_NAME.app/Contents/MacOS/$MNEMOS_BIN"
+
+  export MNEMOS_SCHEME_NAME
+  export MNEMOS_PLIST_PATH="$BUNDLE_DIR/$MNEMOS_APP_NAME.app/Contents/Info.plist"
+  ./script/update_plist
+
+  if [[ $REGISTER_SERVICES = true ]]; then
+    plutil -insert NSServices -xml "
+    <array>
+      <dict>
+        <key>NSMenuItem</key>
+        <dict>
+          <key>default</key>
+          <string>New $MNEMOS_APP_NAME Tab Here</string>
+        </dict>
+        <key>NSMessage</key>
+        <string>openTab</string>
+        <key>NSRequiredContext</key>
+        <dict>
+          <key>NSTextContent</key>
+          <string>FilePath</string>
+        </dict>
+        <key>NSSendTypes</key>
+        <array>
+          <string>NSFilenamesPboardType</string>
+          <string>public.plain-text</string>
+        </array>
+      </dict>
+      <dict>
+        <key>NSMenuItem</key>
+        <dict>
+          <key>default</key>
+          <string>New $MNEMOS_APP_NAME Window Here</string>
+        </dict>
+        <key>NSMessage</key>
+        <string>openWindow</string>
+        <key>NSRequiredContext</key>
+        <dict>
+          <key>NSTextContent</key>
+          <string>FilePath</string>
+        </dict>
+        <key>NSSendTypes</key>
+        <array>
+          <string>NSFilenamesPboardType</string>
+          <string>public.plain-text</string>
+        </array>
+      </dict>
+    </array>" "$BUNDLE_DIR"/$MNEMOS_APP_NAME.app/Contents/Info.plist
+  fi
+
+  # Temporary key that ChatGPT Desktop can use to determine if the latest version of Mnemos supports the ChatGPT integration.
+  # Once support has been rolled out for a sufficient amount of time we (and ChatGPT) can remove this.
+  plutil -insert SUPPORTS_CHAT_GPT_WORK_WITH_APPS -bool true "$BUNDLE_DIR"/$MNEMOS_APP_NAME.app/Contents/Info.plist
+
+  # Add LSBackgroundOnly key and set it to false since we need a UI app
+  plutil -insert LSBackgroundOnly -bool false "$BUNDLE_DIR"/$MNEMOS_APP_NAME.app/Contents/Info.plist
+
+  # Add SMAuthorizedClients for macOS 13+ (Ventura) to support login item functionality
+  plutil -insert SMAuthorizedClients -xml "<array><string>$BUNDLE_ID</string></array>" "$BUNDLE_DIR"/$MNEMOS_APP_NAME.app/Contents/Info.plist
+
+  if [[ $UNIVERSAL_BINARY = true ]]; then
+      if [[ $BUILD_BINARY = true ]]; then
+          echo "Building $ADDITIONAL_TARGET to include in universal binary"
+
+          pushd app > /dev/null
+          cargo build --profile "$CARGO_PROFILE" --bin "$MNEMOS_BIN" --target "$ADDITIONAL_TARGET" --features "$FEATURES"
+          popd > /dev/null
+      else
+          echo "Skipping build of $ADDITIONAL_TARGET due to --skip-build flag"
+      fi
+
+      tmp_bundle_dir=$(mktemp -d -t ci-XXXXXXXXXX)
+
+      echo "Adding rpath to both binaries for universal executable"
+      install_name_tool -add_rpath "@executable_path/../Frameworks" "target/$INTEL_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN"
+      install_name_tool -add_rpath "@executable_path/../Frameworks"  "target/$ARM_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN"
+
+      echo "Building universal binary using lipo."
+      lipo -create -output "$tmp_bundle_dir/$MNEMOS_BIN" \
+          "target/$INTEL_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN" \
+          "target/$ARM_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN"
+
+      # Compute the real absolute path to the dSYM file, factoring in symlinks.
+      # Starting in Rust 1.56, the generated dSYMs are symlinks to files within the target/dep directory. For example,
+      # a dSYM for dev may be symlinked to target/deps/dev-080cf7e291fb066d.dSYM. This means the actual debug symbols are
+      # would be located at dev.dSYM/Contents/Resources/DWARF/dev-080cf7e291fb066d.dSYM where dev.dSYM is symlink to
+      # deps/dev-080cf7e291fb066d.dSYM. To fix this, parse out the actual name of the directory that the dSYM is
+      # symlinked to, since this is also the name of file that contains the debug symbols within the dSYM.
+      INTEL_DSYM_NAME=$(basename "$(realpath target/$INTEL_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN.dSYM)" .dSYM)
+      INTEL_DSYM_PATH="target/$INTEL_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN.dSYM/Contents/Resources/DWARF/$INTEL_DSYM_NAME"
+      ARM_DSYM_NAME=$(basename "$(realpath target/$ARM_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN.dSYM)" .dSYM)
+      ARM_DSYM_PATH="target/$ARM_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN.dSYM/Contents/Resources/DWARF/$ARM_DSYM_NAME"
+      if [[ -e "$INTEL_DSYM_PATH" && -e "$ARM_DSYM_PATH" ]]; then
+        echo "Building universal binary .dSYM using lipo and storing in $OUT_DIR/$MNEMOS_BIN.dSYM"
+
+        # Use lipo to merge the .dSYM files into a single universal .dSYM file.
+        # It expects the base name for the file (with the .dSYM suffix removed).
+        lipo -create -output "$OUT_DIR/$MNEMOS_BIN.dSYM" "${INTEL_DSYM_PATH}" "${ARM_DSYM_PATH}"
+      fi
+
+      echo "Storing result in $BUNDLE_DIR, replacing $DEFAULT_TARGET binary with fat binary."
+      mv "$tmp_bundle_dir/$MNEMOS_BIN" "$BUNDLE_DIR/$MNEMOS_APP_NAME.app/Contents/MacOS"
+  elif [[ -n "$TARGET_ARCH" && -e "target/$DEFAULT_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN.dSYM" ]]; then
+    echo "Copying .dSYM into $OUT_DIR/$MNEMOS_BIN.dSYM"
+    cp -HR "target/$DEFAULT_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN.dSYM" "$OUT_DIR/"
+  fi
+
+  # The dock tile plugin's Makefile builds arm64 and x86_64 together, so it needs no lipo.
+  echo "Creating PlugIns directory and copying the DockTilePlugin built from app/DockTilePlugin..."
+  resolve_dock_tile_plugin
+  mkdir -p "$BUNDLE_DIR/$MNEMOS_APP_NAME.app/Contents/PlugIns"
+  cp -R "$DOCK_TILE_PLUGIN_DIR" "$BUNDLE_DIR/$MNEMOS_APP_NAME.app/Contents/PlugIns/"
+
+  echo "Updating plist with dock tile plugin entries"
+  plutil -insert NSDockTilePlugIn -string "MnemosDockTilePlugin.docktileplugin" "$BUNDLE_DIR"/$MNEMOS_APP_NAME.app/Contents/Info.plist
+  plutil -insert MainAppBundleIdentifier -string "$BUNDLE_ID" "$BUNDLE_DIR"/$MNEMOS_APP_NAME.app/Contents/PlugIns/MnemosDockTilePlugin.docktileplugin/Contents/Info.plist
+
+  BUNDLED_RESOURCES_DIR="$BUNDLE_DIR/$MNEMOS_APP_NAME.app/Contents/Resources"
+  echo "Preparing bundled resources..."
+  "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE"
+
+  "$WORKSPACE_ROOT_DIR/script/compile_icon" "$RELEASE_CHANNEL" "$BUNDLE_DIR/$MNEMOS_APP_NAME.app"
+
+  HELPERS_DIR="$BUNDLE_DIR/$MNEMOS_APP_NAME.app/Contents/Helpers"
+  if [[ ",$FEATURES," =~ ",heap_usage_tracking," ]]; then
+    echo "Bundling pprof..."
+    "$WORKSPACE_ROOT_DIR/script/prepare_bundled_pprof" "$HELPERS_DIR"
+  fi
+
+  # Determine CLI wrapper script path based on release channel.  Each channel's
+  # value here must match `Channel::cli_command_name` in the Rust source.
+  if [[ $RELEASE_CHANNEL = "stable" ]]; then
+    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/mnemos"
+  else
+    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/mnemos-$RELEASE_CHANNEL"
+  fi
+
+  echo "Creating Resources/bin directory and CLI wrapper script..."
+  mkdir -p "$BUNDLED_RESOURCES_DIR/bin"
+  
+  cat > "$CLI_SCRIPT_PATH" << 'EOF'
+#!/bin/bash
+# The stable command and the app binary are both named `mnemos`, so CLI mode is selected
+# by MNEMOS_CLI_MODE rather than by the invoked name.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export MNEMOS_CLI_MODE=1
+exec -a "$0" "$script_dir/../../MacOS/MNEMOS_BIN_PLACEHOLDER" "$@"
+EOF
+  
+  # Replace the placeholder with the actual binary name
+  sed -i '' "s/MNEMOS_BIN_PLACEHOLDER/$MNEMOS_BIN/" "$CLI_SCRIPT_PATH"
+  
+  # Make the script executable
+  chmod +x "$CLI_SCRIPT_PATH"
+
+  # Refuse to ship a dock tile plugin that carries upstream's Warp icons.
+  "$WORKSPACE_ROOT_DIR/script/macos/check_dock_tile_plugin" "$BUNDLE_DIR/$MNEMOS_APP_NAME.app"
+
+  # Store the built artifact locations for GitHub Actions outputs.
+  BINARY_PATH="target/$DEFAULT_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN"
+  DMG_PATH="$OUT_DIR/$FINAL_DMG_NAME"
+elif [[ "$ARTIFACT" == "cli" ]]; then
+  if [[ $BUILD_BINARY == true ]]; then
+    # Create Info.plist before building the app, since it's embedded at build time.
+    # Apple's codesigning tools will detect Info.plist files in the same directory as an executable.
+    # This breaks the code signature, so we must use a different location for the file.
+    mkdir -p "$BUNDLE_DIR"
+    export MNEMOS_PLIST_PATH="$BUNDLE_DIR/cli-info.plist"
+    cp app/assets/resources/mac/CLI-Info.plist "$MNEMOS_PLIST_PATH"
+
+    export MNEMOS_PLIST_NO_FILE_TYPES=true
+    ./script/update_plist
+    plutil -insert CFBundleIdentifier -string "$BUNDLE_ID" "$MNEMOS_PLIST_PATH"
+    plutil -insert CFBundleName -string "$MNEMOS_BIN" "$MNEMOS_PLIST_PATH"
+    plutil -insert CFBundleExecutable -string "$MNEMOS_BIN" "$MNEMOS_PLIST_PATH"
+
+    export "INFO_PLIST_PATH=$(realpath "$MNEMOS_PLIST_PATH")"
+    pushd app > /dev/null
+    echo "Building $DEFAULT_TARGET for channel $RELEASE_CHANNEL with profile $CARGO_PROFILE"
+    cargo build --profile "$CARGO_PROFILE" --bin "$MNEMOS_BIN" --target "$DEFAULT_TARGET" --features "$FEATURES"
+    popd > /dev/null
+  else
+    echo "Skipping binary build due to --skip-build flag"
+  fi
+
+  echo "Copying binary into $OUT_DIR/$MNEMOS_BIN"
+  cp "target/$DEFAULT_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN" "$OUT_DIR/$MNEMOS_BIN"
+
+  if [[ -n "$TARGET_ARCH" && -e "target/$DEFAULT_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN.dSYM" ]]; then
+    echo "Copying .dSYM into $OUT_DIR/$MNEMOS_BIN.dSYM"
+    cp -HR "target/$DEFAULT_TARGET/$TARGET_PROFILE_DIR/$MNEMOS_BIN.dSYM" "$OUT_DIR/"
+  fi
+
+  echo "Preparing CLI resources directory"
+  BUNDLED_RESOURCES_DIR="$OUT_DIR/resources"
+  "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE"
+
+
+  # Set the primary binary path to output.
+  BINARY_PATH="$OUT_DIR/$MNEMOS_BIN"
+else
+  echo "Unsupported artifact: $ARTIFACT" >&2
+  exit 1
+fi
+
+##########################################
+## Step 2: Create code-signing keychain ##
+##########################################
+
+if [[ $READ_PASSWORDS_FROM_ENV != true ]]; then
+  echo "Skipping code-signing because passwords are not available in environment."
+  CODESIGN=false
+fi
+
+if [[ $CODESIGN = true ]]; then
+  # TODO - does this need to change per user?  Seems like it's tied to the MNEMOS_NOTARIZATION_PASSWORD password.
+  APPLE_TEAM_ID="2BBY89MBSN"
+  CODESIGN_KEYCHAIN_NAME="mnemos-codesign-keychain"
+
+  echo "Starting codesigning..."
+
+  if [[ $READ_PASSWORDS_FROM_ENV = true ]]; then
+    if [ -z "$MNEMOS_NOTARIZATION_PASSWORD" ] ; then
+      echo "MNEMOS_NOTARIZATION_PASSWORD must be set for code signing"
+      exit 1
+    fi
+
+    if [ -z "$MNEMOS_DEVELOPER_ID_CERT_PASSWORD" ] ; then
+      echo "MNEMOS_DEVELOPER_ID_CERT_PASSWORD must be set for code signing"
+      exit 1
+    fi
+
+    if [ -z "$MNEMOS_CODESIGN_KEYCHAIN_PASSWORD" ] ; then
+      echo "MNEMOS_CODESIGN_KEYCHAIN_PASSWORD must be set for code signing"
+      exit 1
+    fi
+  fi
+
+  security delete-keychain $CODESIGN_KEYCHAIN_NAME || echo "No existing keychain to clean up".
+
+  echo "Creating $CODESIGN_KEYCHAIN_NAME keychain."
+  security create-keychain -p "$MNEMOS_CODESIGN_KEYCHAIN_PASSWORD" $CODESIGN_KEYCHAIN_NAME
+  # Mnemos IDE: add the temporary keychain to the user's search list instead of replacing the
+  # list, and remember the original so cleanup_codesign_keychain restores it.
+  ORIGINAL_KEYCHAIN_LIST=()
+  while IFS= read -r keychain; do
+    keychain="${keychain#"${keychain%%[![:space:]]*}"}"
+    keychain="${keychain#\"}"
+    keychain="${keychain%\"}"
+    [[ -n "$keychain" ]] && ORIGINAL_KEYCHAIN_LIST+=("$keychain")
+  done < <(security list-keychains -d user)
+  KEYCHAIN_LIST_SAVED=true
+  security list-keychains -d user -s $CODESIGN_KEYCHAIN_NAME ${ORIGINAL_KEYCHAIN_LIST[@]+"${ORIGINAL_KEYCHAIN_LIST[@]}"}
+  security set-keychain-settings -t 3600 -u $CODESIGN_KEYCHAIN_NAME
+
+  echo "Unlocking keychain and setting cert."
+  security unlock-keychain -p "$MNEMOS_CODESIGN_KEYCHAIN_PASSWORD" $CODESIGN_KEYCHAIN_NAME
+  security import <(echo "$MNEMOS_DEVELOPER_ID_CERT" | base64 -d) -f pkcs12 -P "$MNEMOS_DEVELOPER_ID_CERT_PASSWORD" -k $CODESIGN_KEYCHAIN_NAME -T /usr/bin/codesign
+  security set-key-partition-list -S "apple-tool:,apple:" -s -k "$MNEMOS_CODESIGN_KEYCHAIN_PASSWORD" $CODESIGN_KEYCHAIN_NAME
+fi
+
+##############################
+## Step 3: Codesign the app ##
+##############################
+
+# The identity --selfsign signs with, printed as its SHA-1 hash; prints nothing when there is none.
+#
+# MNEMOS_MACOS_SIGNING_IDENTITY pins it. The SHA-1 hash from `security find-identity -p codesigning
+# -v` is the recommended form: a name can match several certificates. A pin that matches no valid
+# identity, or more than one, is an error. Unpinned, it is the first "Apple Development" identity
+# listed, which is keychain order rather than a choice, so more than one is warned about: the team
+# the app is signed by must match the installed app's, or the updater refuses the update
+# (app/src/autoupdate/mac.rs). Keep this in step with script/macos/release, whose pre-build probe
+# must test the same identity.
+select_signing_identity() {
+  local identities matches hashes count
+  identities="$(security find-identity -p codesigning -v 2>/dev/null | grep -E '^[[:space:]]*[0-9]+\)' || true)"
+  if [[ -n "${MNEMOS_MACOS_SIGNING_IDENTITY:-}" ]]; then
+    matches="$(printf '%s\n' "$identities" | grep -iF -- "$MNEMOS_MACOS_SIGNING_IDENTITY" || true)"
+  else
+    matches="$(printf '%s\n' "$identities" | grep "Apple Development" || true)"
+  fi
+  hashes="$(printf '%s\n' "$matches" | awk 'NF { print $2 }' | awk '!seen[$0]++')"
+  count="$(printf '%s\n' "$hashes" | grep -c . || true)"
+  if [[ -n "${MNEMOS_MACOS_SIGNING_IDENTITY:-}" ]]; then
+    if [[ "$count" -eq 0 ]]; then
+      echo "MNEMOS_MACOS_SIGNING_IDENTITY ($MNEMOS_MACOS_SIGNING_IDENTITY) is not a valid codesigning identity in this keychain." >&2
+      return 1
+    fi
+    if [[ "$count" -gt 1 ]]; then
+      echo "MNEMOS_MACOS_SIGNING_IDENTITY ($MNEMOS_MACOS_SIGNING_IDENTITY) matches $count identities; pin one by its SHA-1 hash:" >&2
+      printf '%s\n' "$matches" >&2
+      return 1
+    fi
+  elif [[ "$count" -gt 1 ]]; then
+    echo "WARNING: $count Apple Development identities in the keychain; signing with the first one listed:" >&2
+    printf '%s\n' "$matches" | head -1 >&2
+    echo "WARNING: pin one with MNEMOS_MACOS_SIGNING_IDENTITY=<SHA-1 hash> so the signing team cannot change with keychain order." >&2
+  fi
+  printf '%s\n' "$hashes" | head -1
+}
+
+# --nosign takes this branch too, with the ad-hoc identity forced. "No signing" used to mean
+# the bundle was left exactly as cargo-bundle produced it: the main binary carries the
+# linker's automatic ad-hoc signature, whose code directory declares a resource seal that
+# was never generated, so `codesign -v Mnemos.app` fails with "code has no resources but
+# signature indicates they must be present". The auto-updater runs that exact check on
+# every downloaded bundle, which made a --nosign release un-installable by definition.
+# An ad-hoc --deep seal has no identity and needs no keychain, so it works over SSH; it
+# just makes the bundle a valid code object.
+if [[ $SELFSIGN = true || $CODESIGN = false ]]; then
+  if [[ $SELFSIGN = true ]]; then
+    if ! SIGNING_CERT="$(select_signing_identity)"; then
+      exit 1
+    fi
+    if [[ -z "$SIGNING_CERT" ]]; then
+      if [[ "${MNEMOS_SELFSIGN_STRICT:-}" = 1 || -n "${MNEMOS_MACOS_SIGNING_TEAM:-}" ]]; then
+        echo "No valid Apple Development identity in the keychain, and ad-hoc signing is not allowed here" >&2
+        echo "(MNEMOS_SELFSIGN_STRICT=1 or MNEMOS_MACOS_SIGNING_TEAM is set): team-signed installs refuse an" >&2
+        echo "ad-hoc update. Pass --nosign to build ad-hoc deliberately." >&2
+        exit 1
+      fi
+      echo "No Apple Development cert found, falling back to ad-hoc signing."
+      SIGNING_CERT="-"
+    else
+      echo "Signing with identity $SIGNING_CERT"
+    fi
+  else
+    echo "No signing identity requested; ad-hoc sealing so the bundle verifies."
+    SIGNING_CERT="-"
+  fi
+  if [[ "$ARTIFACT" == app ]]; then
+    SIGNED_PATH="$BUNDLE_DIR/$MNEMOS_APP_NAME.app"
+    echo "Self-signing $SIGNED_PATH with ${SIGNING_CERT}..."
+    # Nothing inside Mnemos.app needs JIT entitlements. --deep handles the
+    # .app and its nested code.
+    codesign --force --deep --options runtime --sign "$SIGNING_CERT" "$SIGNED_PATH" --entitlements script/Debug-Entitlements.plist
+    echo "Verifying the signature of $SIGNED_PATH..."
+    codesign --verify --deep --strict "$SIGNED_PATH"
+  elif [[ "$ARTIFACT" == cli ]]; then
+    SIGNED_PATH="$OUT_DIR/$MNEMOS_BIN"
+    echo "Self-signing $SIGNED_PATH with ${SIGNING_CERT}..."
+    codesign --force --options runtime --sign "$SIGNING_CERT" "$SIGNED_PATH" --entitlements script/Debug-Entitlements.plist
+    echo "Verifying the signature of $SIGNED_PATH..."
+    codesign --verify --strict "$SIGNED_PATH"
+  fi
+
+  # Read the team from the signature itself. The "(XXXXXXXXXX)" in an Apple Development
+  # identity's name is not the team, so it cannot be derived from the identity.
+  SIGNED_TEAM="$({ codesign -dv "$SIGNED_PATH" 2>&1 || true; } | sed -n 's/^TeamIdentifier=//p')"
+  if [[ "$SIGNED_TEAM" = "not set" ]]; then
+    SIGNED_TEAM=""
+  fi
+  echo "TeamIdentifier: ${SIGNED_TEAM:-none (ad-hoc)}"
+  if [[ -n "${MNEMOS_MACOS_SIGNING_TEAM:-}" ]]; then
+    if [[ $SELFSIGN = true ]]; then
+      if [[ "$SIGNED_TEAM" != "$MNEMOS_MACOS_SIGNING_TEAM" ]]; then
+        echo "Signed by team '${SIGNED_TEAM:-none}', but MNEMOS_MACOS_SIGNING_TEAM is $MNEMOS_MACOS_SIGNING_TEAM." >&2
+        echo "Installs signed by $MNEMOS_MACOS_SIGNING_TEAM would refuse this build as an update. Pin the right" >&2
+        echo "identity with MNEMOS_MACOS_SIGNING_IDENTITY=<SHA-1 hash>." >&2
+        exit 1
+      fi
+    else
+      echo "WARNING: this build is ad-hoc signed; installs signed by team $MNEMOS_MACOS_SIGNING_TEAM will refuse it as an update." >&2
+    fi
+  fi
+elif [[ $CODESIGN = true ]]; then
+  if [[ "$ARTIFACT" == app ]]; then
+    echo "Codesigning $BUNDLE_DIR/$MNEMOS_APP_NAME.app..."
+    codesign --deep -f -o runtime --timestamp -s "$APPLE_TEAM_ID" "$BUNDLE_DIR/$MNEMOS_APP_NAME.app" --entitlements script/Entitlements.plist
+  elif [[ "$ARTIFACT" == cli ]]; then
+    echo "Codesigning $OUT_DIR/$MNEMOS_BIN..."
+    codesign -f -o runtime --timestamp -s "$APPLE_TEAM_ID" "$OUT_DIR/$MNEMOS_BIN" --entitlements script/Entitlements.plist
+
+    # Create the .zip for notarization in a separate location - otherwise, Apple's codesigning
+    # tools decide that it's a sealed resource that belongs to the binary and needs to also be signed.
+    NOTARIZATION_ARTIFACT="$BUNDLE_DIR/${MNEMOS_BIN}_notarize.zip"
+    if [[ -e "$NOTARIZATION_ARTIFACT" ]]; then
+      echo "Removing old notarization artifact..."
+      rm "$NOTARIZATION_ARTIFACT"
+    fi
+
+    # Create a .zip archive to notarize.
+    ditto -c -k "$OUT_DIR/$MNEMOS_BIN" "$NOTARIZATION_ARTIFACT"
+    
+    # It's not possible to staple notarization tickets to standalone binaries:
+    # https://developer.apple.com/documentation/security/customizing-the-notarization-workflow?language=objc#Staple-the-ticket-to-your-distribution
+    STAPLE_TICKET=false
+  fi
+fi
+
+########################
+## Step 4: Create DMG ##
+########################
+
+if [[ "$ARTIFACT" = app ]]; then
+  function create_mnemos_dmg() {
+    echo "Creating $DMG_DIR/$DMG_NAME..."
+    rm "$DMG_DIR/$DMG_NAME" || true
+    local source_folder="$1"
+
+    local args=(
+      --volname "$MNEMOS_APP_NAME"
+      # For --no-internet-enable, see https://github.com/create-dmg/create-dmg/issues/179
+      --no-internet-enable
+      --background app/assets/resources/mac/mnemos_install_image.png
+      --icon-size 128
+      --window-size 700 500
+      --format UDZO
+      --app-drop-link 550 250
+      --icon "$MNEMOS_APP_NAME.app" 150 250
+      # macOS 26.4 Beta has issues with mounting HFS+ DMGs, so we're using APFS instead.
+      # APFS has been supported as a DMG filesystem since macOS 10.13, and we target 11.0
+      # as our minimum version.
+      #
+      # See: https://developer.apple.com/documentation/macos-release-notes/macos-26_4-release-notes#External-Media
+      --filesystem APFS
+    )
+
+    # Skip running an AppleScript to format the DMG contents if running in Namespace - this consistently times out.
+    # See https://github.com/create-dmg/create-dmg/issues/72
+    # MNEMOS_DMG_SKIP_FINDER=1 skips it up front too, for shells that are known not to reach Finder.
+    local skip_finder=false
+    if [[ "${RUNNER_NAME:-}" == nsc-* || "${MNEMOS_DMG_SKIP_FINDER:-}" = 1 ]]; then
+      skip_finder=true
+      args+=(--skip-jenkins)
+    fi
+
+    # Options first, then the two positional args (output dmg, source folder): create-dmg stops
+    # reading options at the first positional one, so --skip-jenkins must go before them.
+    local status=0
+    create-dmg "${args[@]}" "$DMG_DIR/$DMG_NAME" "$source_folder" || status=$?
+
+    # create-dmg exits 64 only when the Finder layout AppleScript fails, after the whole image is
+    # built. From a shell inside Mnemos or Claude Code that is usually -1743: the shell has no
+    # TCC grant to send Apple events to Finder. The layout is cosmetic and the updater ignores it,
+    # so build again without it rather than lose the release. The failed run leaves its
+    # rw.<pid>.<name> image in DMG_DIR, which is also the source folder, so it has to go first or
+    # the retry would pack it into the dmg.
+    if [[ $status -eq 64 && $skip_finder = false ]]; then
+      echo "create-dmg could not script Finder to lay out the dmg window (exit 64; often -1743, Apple Events denied)."
+      echo "Retrying without the cosmetic layout (--skip-jenkins)."
+      rm -f "$DMG_DIR"/rw.*.dmg "$DMG_DIR/$DMG_NAME"
+      status=0
+      create-dmg "${args[@]}" --skip-jenkins "$DMG_DIR/$DMG_NAME" "$source_folder" || status=$?
+    fi
+    if [[ $status -ne 0 ]]; then
+      echo "create-dmg failed with exit code $status" >&2
+      exit "$status"
+    fi
+  }
+
+  # If we're codesigning, stage the signed app and use that to create the DMG.
+  # Otherwise, create a DMG from the bundle dir directly.
+  if [[ $CODESIGN = true ]]; then
+    if test -d "$DMG_DIR"; then
+      echo "Clearing old dmg directory $DMG_DIR"
+      rm -r "$DMG_DIR"
+    fi
+    echo "Creating $DMG_DIR"
+    mkdir -p "$DMG_DIR"
+    cp -R "$BUNDLE_DIR/$MNEMOS_APP_NAME.app" "$DMG_DIR"
+
+    create_mnemos_dmg "$DMG_DIR"
+
+    echo "Codesigning $DMG_DIR/$DMG_NAME..."
+    codesign -s "$APPLE_TEAM_ID" --timestamp "$DMG_DIR/$DMG_NAME"
+
+    NOTARIZATION_ARTIFACT="$DMG_DIR/$DMG_NAME"
+    STAPLE_TICKET=true
+  else
+    # DMG_DIR is nested inside BUNDLE_DIR, so passing BUNDLE_DIR straight to
+    # create-dmg makes hdiutil try to copy its own in-progress rw.dmg back
+    # into itself ("could not access ... No space left on device"). Stage just
+    # the .app in DMG_DIR and use that as the source — matches the codesign
+    # branch above.
+    if test -d "$DMG_DIR"; then
+      echo "Clearing old dmg directory $DMG_DIR"
+      rm -r "$DMG_DIR"
+    fi
+    echo "Creating $DMG_DIR"
+    mkdir -p "$DMG_DIR"
+    cp -R "$BUNDLE_DIR/$MNEMOS_APP_NAME.app" "$DMG_DIR"
+
+    create_mnemos_dmg "$DMG_DIR"
+  fi
+fi
+
+##############################
+## Step 5: Notarize the app ##
+##############################
+
+if [[ $CODESIGN = true ]]; then
+  echo "Uploading $NOTARIZATION_ARTIFACT to Apple for notarization..."
+  xcrun notarytool submit "$NOTARIZATION_ARTIFACT" --apple-id "$MNEMOS_NOTARIZATION_APPLE_ID" --password "$MNEMOS_NOTARIZATION_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+
+  if [[ $STAPLE_TICKET = true ]]; then
+    echo "Attempting to staple the notarization ticket to $NOTARIZATION_ARTIFACT..."
+    xcrun stapler staple "$NOTARIZATION_ARTIFACT"
+  fi
+
+  if [[ $? != 0 ]]; then
+    echo "Notarization failed; see above output for details."
+    exit 1
+  fi
+
+  # Verify the notarization results (this is format-dependent)
+  echo "Verifying notarization ticket..."
+  if [[ "$ARTIFACT" = app ]]; then
+    xcrun stapler validate "$DMG_DIR/$DMG_NAME"
+  elif [[ "$ARTIFACT" = cli ]]; then
+    spctl -a -t open --context context:primary-signature -vv "$OUT_DIR/$MNEMOS_BIN"
+  fi
+fi
+
+
+#######################################
+## Step 6: Copy and output artifacts ##
+#######################################
+
+if [[ "$ARTIFACT" = app ]]; then
+  echo "Copying dmg and app to $OUT_DIR"
+  cp -R "$BUNDLE_DIR/$MNEMOS_APP_NAME.app" "$OUT_DIR"
+  cp "$DMG_DIR/$DMG_NAME" "$OUT_DIR/$FINAL_DMG_NAME"
+fi
+
+# If this is being run within a GitHub action, set an output variable with the
+# location of the artifacts so they can be referenced by subsequent actions.
+if [ "${GITHUB_ACTIONS}" == "true" ]; then
+  echo "::echo::on"
+
+  # For individual architecture builds, output binary information
+  if [[ -n "$TARGET_ARCH" ]]; then
+    echo "binary_path=$BINARY_PATH" >> "$GITHUB_OUTPUT"
+    echo "target_arch=$TARGET_ARCH" >> "$GITHUB_OUTPUT"
+    echo "rust_target=$DEFAULT_TARGET" >> "$GITHUB_OUTPUT"
+    
+    # If the dSYM is available, output both its path and its realpath.
+    # The realpath is needed because the dSYM is a symlink, and when preserving
+    # the build artifacts, we want to preserve both the symlink and its target.
+    DSYM_PATH="${BINARY_PATH}.dSYM"
+    if [[ -d "$DSYM_PATH" ]]; then
+      echo "dsym_path=$DSYM_PATH" >> "$GITHUB_OUTPUT"
+
+      # If the dSYM is a symlink, output its real path.
+      if [[ -L "$DSYM_PATH" ]]; then
+        echo "dsym_realpath=$(relpath $(realpath $DSYM_PATH))" >> "$GITHUB_OUTPUT"
+      fi
+    fi
+  fi
+
+  echo "dock_tile_plugin_dir=$DOCK_TILE_PLUGIN_DIR" >> "$GITHUB_OUTPUT"
+  echo "frameworks_dir=app/frameworks/${FRAMEWORK_OVERRIDE:-default}" >> "$GITHUB_OUTPUT"
+  
+  # For full bundles, output DMG information
+  if [[ -f "$OUT_DIR/$FINAL_DMG_NAME" ]]; then
+    echo "dmg_name=$FINAL_DMG_NAME" >> "$GITHUB_OUTPUT"
+    echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+    echo "dsym_folder_path=$OUT_DIR" >> "$GITHUB_OUTPUT"
+  fi
+
+  if [[ -n "$BUNDLED_RESOURCES_DIR" ]]; then
+    echo "bundled_resources_dir=$BUNDLED_RESOURCES_DIR" >> "$GITHUB_OUTPUT"
+  fi
+  
+  echo "::echo::off"
+fi
+
+if [[ $OPEN_AFTER_BUNDLE = true ]]; then
+    open "$OUT_DIR"
+fi

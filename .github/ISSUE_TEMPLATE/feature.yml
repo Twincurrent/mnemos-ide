@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an idea or an improvement for Mnemos IDE.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Please search the existing issues first; a thumbs-up on an existing request helps more than a duplicate.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: How you picture it working. Screenshots or sketches welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to work on it?
+      options:
+        - "No"
+        - "Yes, with some guidance"
+        - "Yes"

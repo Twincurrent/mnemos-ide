@@ -1,0 +1,6 @@
+# Allowlist for the billing-copy check in script/oss/grep-checks.sh.
+#
+# Format: "<path> <extended regex>", one entry per line. A hit is ignored when its
+# path equals <path> exactly and the matched line matches <regex>
+# (case-insensitive). Every entry needs a comment saying why it is intentional.
+# "temp:" entries are honoured in a normal run and ignored under --strict.

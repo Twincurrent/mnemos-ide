@@ -1,0 +1,10 @@
+# Allowlist for script/oss/leak-check.sh.
+#
+# Format: "<path> <extended regex>", one entry per line. A hit is ignored when its
+# file path equals <path> exactly and the matched line matches <regex>
+# (case-insensitive). Every entry needs a comment saying why it is intentional.
+#
+# Prefix the path with "temp:" for a known leak that another change is about to
+# remove. temp: entries are honoured in a normal run, so the tree stays green
+# while that change is in flight, but ignored under --strict, so
+# script/oss/export-public.sh refuses to export until they are gone.

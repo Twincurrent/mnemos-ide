@@ -1,0 +1,305 @@
+# Builds and publishes a Mnemos release from one signed tag.
+#
+# Push a signed, annotated tag named like the version, for example
+#   git tag -s v0.2026.10.09.12.30.stable_01 -m "Mnemos v0.2026.10.09.12.30.stable_01"
+#   git push <public remote> v0.2026.10.09.12.30.stable_01
+# (stamp the name with `cargo run -p channel_versions --bin update_signing -- stamp-version`).
+# Every asset is built from that one commit; the manifest is published last, by a job that runs
+# only after every asset job succeeded. The jobs call the same scripts a release from a desk
+# does (script/macos/release, script/windows/release.ps1; see RELEASING.md), so the two paths
+# cannot drift.
+#
+# Who holds what. A build job compiles roughly a thousand third-party crates, any of whose build
+# scripts or proc macros could be hostile, so:
+#   - The build jobs (macos, windows) get no R2 token, no update signing key and a read-only
+#     GitHub token that is not left in .git/config (persist-credentials: false). They build only
+#     (the release scripts' dry-run) and hand the asset on as a workflow artifact.
+#   - The upload jobs (macos-upload, windows-upload) start on a fresh runner, compile nothing
+#     (`cargo vendor` for the source archive only downloads), upload the artifact with the R2
+#     token, and output its `<name>=<sha256>:<size>`.
+#   - The publish job builds the signing tool in a step that holds no secret, then signs only the
+#     digests the upload jobs output: the served bytes must match them (script -ExpectAsset), and
+#     no other asset is signed. It alone has `contents: write`, for the GitHub release.
+#
+# All secrets live in the protected `release` Environment (Settings > Environments), which should
+# require a reviewer and allow only these tags:
+#   MNEMOS_TAG_ALLOWED_SIGNERS     ssh allowed_signers lines for the people who may tag a release
+#   CLOUDFLARE_ACCOUNT_ID          R2 account
+#   CLOUDFLARE_API_TOKEN           R2 token, Object Read & Write on the release bucket only;
+#                                  upload and publish steps only
+#   MNEMOS_RELEASES_BUCKET         optional, defaults to mnemos-releases
+#   MNEMOS_UPDATE_SIGNING_KEY      update signing key (mnemos-update-sec:...), publish step only
+#   MNEMOS_MACOS_CERT_P12          base64 of the macOS signing certificate (.p12)
+#   MNEMOS_MACOS_CERT_PASSWORD     its password
+#   MNEMOS_MACOS_SIGNING_TEAM      the team the .dmg must be signed by
+#   MNEMOS_WINDOWS_SIGN_TOOL_CMD   optional, the Authenticode signtool command bundle.ps1 takes
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v0.*.stable_*"
+
+# Read-only by default; only the publish job asks for more.
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify-tag:
+    name: Verify the release tag
+    runs-on: ubuntu-24.04
+    environment: release
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: tag
+        name: Check the tag is annotated, well formed and signed by an allowed signer
+        env:
+          ALLOWED_SIGNERS: ${{ secrets.MNEMOS_TAG_ALLOWED_SIGNERS }}
+          FETCH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.stable_[0-9]+$ ]]; then
+            echo "::error::$tag is not a release version (v0.<yyyy.MM.dd.HH.mm>.stable_<nn>)"
+            exit 1
+          fi
+          # actions/checkout may hand over a lightweight copy; fetch the tag object itself. The
+          # token is passed for this one command, not stored in .git/config.
+          auth="$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 | tr -d '\n')"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            fetch --force origin "refs/tags/$tag:refs/tags/$tag"
+          if [[ "$(git cat-file -t "refs/tags/$tag")" != tag ]]; then
+            echo "::error::$tag is not an annotated tag"
+            exit 1
+          fi
+          if [[ -z "$ALLOWED_SIGNERS" ]]; then
+            echo "::error::MNEMOS_TAG_ALLOWED_SIGNERS is not set in the release environment; refusing an unverified tag"
+            exit 1
+          fi
+          signers="$(mktemp)"
+          printf '%s\n' "$ALLOWED_SIGNERS" > "$signers"
+          git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$signers" verify-tag "$tag"
+          if [[ "$(git rev-parse "refs/tags/$tag^{commit}")" != "$GITHUB_SHA" ]]; then
+            echo "::error::$tag does not name $GITHUB_SHA"
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+  macos:
+    name: Build the macOS arm64 .dmg
+    needs: verify-tag
+    runs-on: macos-15
+    environment: release
+    timeout-minutes: 180
+    env:
+      VERSION: ${{ needs.verify-tag.outputs.version }}
+      MNEMOS_MACOS_SIGNING_TEAM: ${{ secrets.MNEMOS_MACOS_SIGNING_TEAM }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      # crates/remote_server's build script runs prost-build, which needs protoc.
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install the Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain || true
+      - name: Import the signing certificate into a temporary keychain
+        env:
+          CERT_P12: ${{ secrets.MNEMOS_MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MNEMOS_MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password="$(uuidgen)"
+          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          identity="$(security find-identity -p codesigning -v "$keychain" | awk 'NR==1 && NF { print $2 }')"
+          echo "MNEMOS_MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+      # --dry-run builds and checks everything and uploads nothing; this job holds no R2 token.
+      - name: Build the .dmg (uploads nothing)
+        run: ./script/macos/release --version "$VERSION" --skip-manifest --dry-run
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: target/release-lto/bundle/osx/Mnemos-arm64.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  macos-upload:
+    name: Upload the .dmg
+    needs: [verify-tag, macos]
+    runs-on: macos-15
+    environment: release
+    timeout-minutes: 60
+    outputs:
+      digest: ${{ steps.upload.outputs.digest }}
+    env:
+      VERSION: ${{ needs.verify-tag.outputs.version }}
+      MNEMOS_MACOS_SIGNING_TEAM: ${{ secrets.MNEMOS_MACOS_SIGNING_TEAM }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: target/release-lto/bundle/osx
+      # --skip-build reads the version, team and source commit from the .dmg itself and refuses a
+      # mismatch, then uploads the source archive and the .dmg. Nothing is compiled here.
+      - id: upload
+        name: Upload the .dmg (manifest untouched)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MNEMOS_RELEASES_BUCKET: ${{ secrets.MNEMOS_RELEASES_BUCKET }}
+        run: ./script/macos/release --version "$VERSION" --skip-build --skip-manifest
+
+  windows:
+    name: Build the Windows x64 installer
+    needs: verify-tag
+    runs-on: windows-2022
+    environment: release
+    timeout-minutes: 180
+    env:
+      VERSION: ${{ needs.verify-tag.outputs.version }}
+      SIGN_TOOL_CMD: ${{ secrets.MNEMOS_WINDOWS_SIGN_TOOL_CMD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the Rust toolchain
+        shell: pwsh
+        run: rustup show active-toolchain; if ($LASTEXITCODE -ne 0) { rustup toolchain install }
+      # crates/remote_server's build script runs prost-build, which needs protoc.
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      # -DryRun builds and checks everything and uploads nothing; this job holds no R2 token.
+      - name: Build the installer (uploads nothing)
+        shell: powershell
+        run: ./script/windows/release.ps1 -Version $env:VERSION -SkipManifest -DryRun
+      # The staged NOTICE goes along: release.ps1 -SkipBuild reads the source commit from it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            script/windows/Output/MnemosSetup.exe
+            target/x86_64-pc-windows-msvc/rlto/resources/NOTICE
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-upload:
+    name: Upload the installer
+    needs: [verify-tag, windows]
+    runs-on: windows-2022
+    environment: release
+    timeout-minutes: 60
+    outputs:
+      digest: ${{ steps.upload.outputs.digest }}
+    env:
+      VERSION: ${{ needs.verify-tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the Rust toolchain
+        shell: pwsh
+        run: rustup show active-toolchain; if ($LASTEXITCODE -ne 0) { rustup toolchain install }
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: .
+      # release.ps1 refuses a NOTICE newer than the installer (it would describe a later build);
+      # extraction order is arbitrary, so put the installer's time after the NOTICE's.
+      - name: Order the artifact timestamps
+        shell: pwsh
+        run: (Get-Item script/windows/Output/MnemosSetup.exe).LastWriteTime = (Get-Item target/x86_64-pc-windows-msvc/rlto/resources/NOTICE).LastWriteTime.AddSeconds(1)
+      - id: upload
+        name: Upload the installer (manifest untouched)
+        shell: powershell
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MNEMOS_RELEASES_BUCKET: ${{ secrets.MNEMOS_RELEASES_BUCKET }}
+        run: ./script/windows/release.ps1 -Version $env:VERSION -SkipBuild -SkipManifest
+
+  publish:
+    name: Sign and publish the manifest
+    needs: [verify-tag, macos-upload, windows-upload]
+    runs-on: windows-2022
+    environment: release
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify-tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the Rust toolchain
+        shell: pwsh
+        run: rustup show active-toolchain; if ($LASTEXITCODE -ne 0) { rustup toolchain install }
+      # Compiled before any secret is in reach; the publish step only runs the binary.
+      - name: Build the signing tool (no secrets)
+        shell: pwsh
+        run: cargo build --locked -p channel_versions --bin update_signing
+      # Signs only the two digests the upload jobs output: each served asset must match its
+      # digest, and anything else in the bucket is left unsigned (release.ps1 -ExpectAsset).
+      # Then uploads SHA256SUMS, its signature and the manifest, and creates the GitHub release.
+      - name: Publish
+        shell: powershell
+        env:
+          MAC_DIGEST: ${{ needs.macos-upload.outputs.digest }}
+          WIN_DIGEST: ${{ needs.windows-upload.outputs.digest }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MNEMOS_RELEASES_BUCKET: ${{ secrets.MNEMOS_RELEASES_BUCKET }}
+          MNEMOS_UPDATE_SIGNING_KEY: ${{ secrets.MNEMOS_UPDATE_SIGNING_KEY }}
+          # Optional update hints (repository variables); empty means none.
+          MNEMOS_UPDATE_BY: ${{ vars.MNEMOS_UPDATE_BY }}
+          MNEMOS_SOFT_CUTOFF: ${{ vars.MNEMOS_SOFT_CUTOFF }}
+          MNEMOS_LAST_PROMINENT_UPDATE: ${{ vars.MNEMOS_LAST_PROMINENT_UPDATE }}
+          MNEMOS_GITHUB_RELEASE_REPO: ${{ github.repository }}
+          MNEMOS_RELEASE_COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Each upload job vouches for its own platform's asset only.
+          if (-not "$env:MAC_DIGEST".StartsWith('Mnemos-arm64.dmg=')) { throw "macos-upload output no .dmg digest ('$env:MAC_DIGEST')" }
+          if (-not "$env:WIN_DIGEST".StartsWith('MnemosSetup.exe=')) { throw "windows-upload output no installer digest ('$env:WIN_DIGEST')" }
+          ./script/windows/release.ps1 -PublishOnly -Version $env:VERSION -ExpectAsset $env:MAC_DIGEST, $env:WIN_DIGEST
+          exit $LASTEXITCODE

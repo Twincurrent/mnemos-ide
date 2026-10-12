@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+#
+# Runs the test suites and clippy for the ide/mnemos-ide-* crates, the leak
+# check (script/oss/leak-check.sh) over the whole tree, and the workspace's
+# cargo-deny license, source, ban and advisory gates. CI runs it on every pull
+# request (.github/workflows/pr.yml); run it by hand before a release too.
+# script/presubmit is upstream's and cannot pass here (it
+# needs cargo-nextest, wgslfmt and a workspace-wide clippy), so this is the check
+# for the Mnemos IDE layer.
+#
+# Every step always runs: a red test binary does not stop clippy, the leak
+# check or cargo-deny. Exits non-zero if any step failed (a skipped cargo-deny
+# does not count). The advisories step fetches the RustSec database (read-only);
+# set MNEMOS_SKIP_ADVISORIES=1 to skip it when offline.
+#
+# The tests run against the caller's HOME. The one that reads real user data
+# (mnemos-ide-sessions parsing ~/.claude/projects) is opt-in through
+# MNEMOS_TEST_REAL_CLAUDE=1, but to keep every test off your files, run with a
+# scratch HOME and point cargo and rustup back at the real toolchain (CI does this):
+#   CARGO_HOME="$HOME/.cargo" RUSTUP_HOME="$HOME/.rustup" HOME="$(mktemp -d)" script/ide-check
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# Several mnemos-ide crates pull in mnemos_ui through mnemos_core, and its build script
+# needs `xcrun metal`. Put the cached-toolchain shim on PATH when the Metal
+# Toolchain component is missing (same as script/macos/bundle). Non-fatal: the
+# build script has its own fallback.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    METAL_SHIM_DIR="$("$REPO_ROOT/script/macos/metal_toolchain")" || METAL_SHIM_DIR=""
+    if [[ -n "$METAL_SHIM_DIR" ]]; then
+        export PATH="$METAL_SHIM_DIR:$PATH"
+    fi
+fi
+
+# Fail fast on unowned install sources, domains, Warp artwork names or billing copy (cheap, no
+# build).
+"$REPO_ROOT/script/oss/grep-checks.sh"
+
+# NOTICE's AGPL 5(a) statement must name the upstream commit Mnemos IDE is based on
+# (script/oss/UPSTREAM_BASE), and no other: a wrong base attributes Warp's commits to TwinCurrent.
+UPSTREAM_BASE="$(grep -v -E '^[[:space:]]*(#|$)' "$REPO_ROOT/script/oss/UPSTREAM_BASE" | head -n 1 | tr -d '[:space:]')"
+NOTICE_SHAS="$(grep -oE '\b[0-9a-f]{40}\b' "$REPO_ROOT/NOTICE" | sort -u)"
+if [[ "$NOTICE_SHAS" != "$UPSTREAM_BASE" ]]; then
+    echo "ide-check: NOTICE names commit(s) ${NOTICE_SHAS//$'\n'/ } but script/oss/UPSTREAM_BASE is $UPSTREAM_BASE" >&2
+    exit 1
+fi
+
+PKGS=()
+for manifest in ide/mnemos-ide-*/Cargo.toml; do
+    [[ -f "$manifest" ]] || continue
+    name="$(sed -n 's/^name *= *"\(.*\)"/\1/p' "$manifest" | head -n 1)"
+    PKGS+=(-p "${name:-$(basename "$(dirname "$manifest")")}")
+done
+if [[ ${#PKGS[@]} -eq 0 ]]; then
+    echo "ide-check: no ide/mnemos-ide-*/Cargo.toml found under $REPO_ROOT" >&2
+    exit 1
+fi
+echo "ide-check: ${PKGS[*]}"
+
+test_status=0
+cargo test --no-fail-fast "${PKGS[@]}" || test_status=$?
+
+# --keep-going: one crate that fails to compile must not hide the lints of the
+# crates cargo would otherwise stop scheduling.
+clippy_status=0
+cargo clippy --keep-going "${PKGS[@]}" --all-targets -- -D warnings || clippy_status=$?
+
+# Owner paths, client names and Warp addresses must not land in the tree. Public
+# patterns only unless the private pattern file is present.
+leak_status=0
+"$REPO_ROOT/script/oss/leak-check.sh" || leak_status=$?
+# The dependency license, source and ban gate (deny.toml). Offline: it checks
+# Cargo.lock against deny.toml and needs no network.
+deny_status=0
+# The advisory gate (deny.toml [advisories]): fetches the RustSec database, so it
+# needs the network. Every remaining advisory carries a reasoned ignore there.
+advisories_status=0
+if command -v cargo-deny >/dev/null 2>&1; then
+    cargo deny --offline check licenses sources bans || deny_status=$?
+    if [[ "${MNEMOS_SKIP_ADVISORIES:-}" == 1 ]]; then
+        echo "ide-check: MNEMOS_SKIP_ADVISORIES=1; skipping the advisories check" >&2
+        advisories_status=skipped
+    else
+        cargo deny check advisories || advisories_status=$?
+    fi
+else
+    echo "ide-check: cargo-deny is not installed (cargo install --locked cargo-deny); skipping it" >&2
+    deny_status=skipped
+    advisories_status=skipped
+fi
+
+report() {
+    if [[ "$2" == skipped ]]; then
+        echo "  $1: skipped"
+    elif [[ "$2" -eq 0 ]]; then
+        echo "  $1: ok"
+    else
+        echo "  $1: FAILED (exit $2)"
+    fi
+}
+echo
+echo "ide-check summary:"
+report "cargo test  " "$test_status"
+report "cargo clippy" "$clippy_status"
+report "leak check  " "$leak_status"
+report "cargo deny  " "$deny_status"
+report "advisories  " "$advisories_status"
+
+if [[ "$test_status" -ne 0 || "$clippy_status" -ne 0 || "$leak_status" -ne 0 \
+    || ( "$deny_status" != skipped && "$deny_status" -ne 0 ) \
+    || ( "$advisories_status" != skipped && "$advisories_status" -ne 0 ) ]]; then
+    exit 1
+fi

@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+#
+# Make `xcrun metal` work, and print a directory to prepend to PATH if a shim was needed.
+#
+# Xcode 26 moved the Metal compiler out of the Xcode bundle into a separately installed
+# MobileAsset component. An Xcode point upgrade bumps the component build it demands, which
+# leaves the previously downloaded asset marked "uninstalled":
+#
+#   $ xcodebuild -showComponent MetalToolchain
+#   Build Version: 17F109
+#   Status: uninstalled
+#
+# `xcodebuild -downloadComponent MetalToolchain` is the sanctioned fix, but it fetches its
+# catalog from gdmf.apple.com — which is also a DEP/MDM check-in endpoint and is therefore
+# null-routed in /etc/hosts on machines that deliberately avoid device enrollment. On such a
+# box the download fails with "Failed fetching catalog for assetType", the shaders never
+# compile, and `mnemos_ui`'s build script panics before anything else gets a chance to run.
+#
+# The already-downloaded asset is still on disk under /System/Library/AssetsV2 as a signed
+# cryptex disk image, and that image mounts read-only WITHOUT root. The compiler inside is a
+# full Metal toolchain; a .metallib it produces is accepted by a newer Xcode, because the
+# format is stable across these point releases. So: mount it and route `xcrun metal` /
+# `xcrun metallib` at it, leaving every other xcrun call alone.
+#
+# Usage, from a script that is about to run cargo:
+#
+#   SHIM="$(script/macos/metal_toolchain)" || exit 1
+#   [[ -n "$SHIM" ]] && export PATH="$SHIM:$PATH"
+#
+# stdout is either empty (the real toolchain works, nothing to do) or a single directory
+# path. All diagnostics go to stderr so callers can consume stdout directly.
+#
+# The mount does not survive a reboot. The generated shim therefore re-runs this script once
+# when the mounted compiler is gone, and hands the call to the real xcrun if that does not bring
+# it back. crates/mnemos_ui/build.rs runs this script as a fallback when plain `xcrun metal`
+# fails, so a build that never sourced the shim still compiles.
+
+set -euo pipefail
+
+WORKSPACE_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ASSET_ROOT="/System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain"
+# A per-user mount point: the per-user temp dir (mode 0700), else a uid-suffixed /tmp dir. Only
+# a toolchain that is an hdiutil mount made by this user is trusted (see mounted_by_me): a
+# world-writable path would let another local user plant a `metal` the build then runs.
+USER_TMP="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
+if [[ -n "$USER_TMP" && -d "$USER_TMP" && -O "$USER_TMP" ]]; then
+    MOUNTPOINT="${USER_TMP%/}/mnemos-metal-toolchain"
+else
+    MOUNTPOINT="/tmp/mnemos-metal-toolchain-$(id -u)"
+fi
+SHIM_DIR="$WORKSPACE_ROOT_DIR/target/metal-shim"
+
+log() { echo "$@" >&2; }
+
+# True when $MOUNTPOINT is a mounted volume that this user mounted.
+mounted_by_me() {
+    local real
+    real="$(cd -P "$MOUNTPOINT" 2>/dev/null && pwd)" || return 1
+    mount | grep -F " on $real (" | grep -qF "mounted by $(id -un))"
+}
+
+# Fast path: a working toolchain needs no help. `metal -v` is enough, since it fails with the
+# "missing Metal Toolchain" stub error when the component is uninstalled. Call the real xcrun
+# by absolute path: the shim's own dir is usually first on PATH, and the shim runs this script
+# to re-mount, so resolving `xcrun` through PATH would recurse.
+if /usr/bin/xcrun -sdk macosx metal -v >/dev/null 2>&1; then
+    exit 0
+fi
+
+log "xcrun metal is unavailable; looking for a locally cached MetalToolchain asset..."
+
+if [[ ! -d "$ASSET_ROOT" ]]; then
+    log ""
+    log "No MetalToolchain asset found under $ASSET_ROOT."
+    log "Install one with:"
+    log ""
+    log "    xcodebuild -downloadComponent MetalToolchain"
+    log ""
+    log "If that fails with 'Failed fetching catalog', gdmf.apple.com is blocked on this"
+    log "machine (see /etc/hosts). Unblock it for the duration of the download only — the"
+    log "other Apple MDM hosts can stay blocked."
+    exit 1
+fi
+
+# Newest asset wins; an Xcode upgrade can leave several generations behind.
+DMG=""
+while IFS= read -r candidate; do
+    DMG="$candidate"
+done < <(find "$ASSET_ROOT" -name '*.dmg' -path '*/AssetData/Restore/*' 2>/dev/null | sort)
+
+if [[ -z "$DMG" ]]; then
+    log "Found $ASSET_ROOT but no restore image inside it. Re-download the component."
+    exit 1
+fi
+
+# The image can be attached only once. If this user already attached it (an earlier run, maybe
+# at an older mount point), reuse that mount. awk reads to the end instead of exiting at the
+# first match: an early exit can SIGPIPE hdiutil, and under pipefail that fails the assignment
+# and silently ends this script (the intermittent shader build failure).
+EXISTING="$(hdiutil info 2>/dev/null | awk -F'\t' -v img="$DMG" '
+    /^image-path/ { sub(/^image-path *: */, ""); cur = ($0 == img); next }
+    cur && !found && /^\/dev\// && $3 != "" { print $3; found = 1 }')" || EXISTING=""
+if [[ -n "$EXISTING" ]]; then
+    PREVIOUS="$MOUNTPOINT"
+    MOUNTPOINT="$EXISTING"
+    mounted_by_me || MOUNTPOINT="$PREVIOUS"
+fi
+
+if ! mounted_by_me || [[ ! -x "$MOUNTPOINT/Metal.xctoolchain/usr/bin/metal" ]]; then
+    log "Mounting $(basename "$DMG") read-only at $MOUNTPOINT"
+    mkdir -p "$MOUNTPOINT"
+    if [[ ! -O "$MOUNTPOINT" ]] && ! mounted_by_me; then
+        log "$MOUNTPOINT is not owned by $(id -un); refusing to use it"
+        exit 1
+    fi
+    # -nobrowse keeps it out of Finder; no sudo required, the image is user-mountable.
+    # Non-fatal: a concurrent build script may have mounted it first. The -x checks below
+    # decide whether the toolchain is usable.
+    hdiutil attach -readonly -nobrowse -mountpoint "$MOUNTPOINT" "$DMG" >/dev/null \
+        || log "hdiutil attach failed; checking whether the toolchain is mounted anyway"
+fi
+
+TOOLCHAIN_BIN="$MOUNTPOINT/Metal.xctoolchain/usr/bin"
+if ! mounted_by_me; then
+    log "$MOUNTPOINT is not a volume mounted by $(id -un); refusing to use it"
+    exit 1
+fi
+if [[ ! -x "$TOOLCHAIN_BIN/metal" || ! -x "$TOOLCHAIN_BIN/metallib" ]]; then
+    log "Mounted image has no metal/metallib under $TOOLCHAIN_BIN"
+    exit 1
+fi
+
+# Write the shim atomically: the re-mount path below rewrites this file while bash may be
+# executing it, here or in a concurrent build.
+mkdir -p "$SHIM_DIR"
+SHIM_TMP="$SHIM_DIR/xcrun.tmp.$$"
+cat > "$SHIM_TMP" <<SHIM
+#!/bin/bash
+# Generated by script/macos/metal_toolchain. Routes metal/metallib at the mounted
+# Metal.xctoolchain and delegates everything else to the real xcrun.
+set -euo pipefail
+TC="$TOOLCHAIN_BIN"
+args=("\$@"); tool=""; idx=0; findmode=0
+while [ \$idx -lt \${#args[@]} ]; do
+  case "\${args[\$idx]}" in
+    -sdk|--sdk|--toolchain) idx=\$((idx+2));;
+    -f|--find) findmode=1; idx=\$((idx+1));;
+    -*) idx=\$((idx+1));;
+    *) tool="\${args[\$idx]}"; break;;
+  esac
+done
+if [ "\$tool" = "metal" ] || [ "\$tool" = "metallib" ]; then
+  # The mount is gone after a reboot. Re-mount at most once; the env guard stops recursion.
+  if [ ! -x "\$TC/\$tool" ] && [ -z "\${MNEMOS_METAL_SHIM_REMOUNT:-}" ]; then
+    MNEMOS_METAL_SHIM_REMOUNT=1 "$WORKSPACE_ROOT_DIR/script/macos/metal_toolchain" >/dev/null || true
+  fi
+  # Still missing: the re-mount found nothing, typically because the real MetalToolchain
+  # component is installed now, so the script took its fast path. Fall through to the real
+  # xcrun; if the component is missing after all, it prints Xcode's own error.
+  if [ -x "\$TC/\$tool" ]; then
+    if [ "\$findmode" = "1" ]; then echo "\$TC/\$tool"; exit 0; fi
+    exec "\$TC/\$tool" "\${args[@]:\$((idx+1))}"
+  fi
+fi
+exec /usr/bin/xcrun "\$@"
+SHIM
+chmod +x "$SHIM_TMP"
+mv -f "$SHIM_TMP" "$SHIM_DIR/xcrun"
+
+log "Using Metal toolchain from $("$TOOLCHAIN_BIN/metal" --version 2>&1 | head -1)"
+echo "$SHIM_DIR"

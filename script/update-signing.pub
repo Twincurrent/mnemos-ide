@@ -1,0 +1,16 @@
+# Public keys that release manifests (channel_versions.json) must be signed with.
+#
+# app/build.rs bakes every non-comment line of this file into a build that has an updater
+# (MNEMOS_OFFICIAL_RELEASE=1, or RELEASES_BASE_URL set). Such a build refuses to compile while this
+# file lists no key, and the shipped app refuses any manifest that none of these keys signed.
+# MNEMOS_UPDATE_PUBLIC_KEYS (comma separated) overrides this file, for forks and test hosts.
+#
+# One key per line, in the form `mnemos-update-pub:<base64>`. Generate a key pair with
+#
+#   cargo run -p channel_versions --bin update_signing -- keygen --secret-out <path outside the repo>
+#
+# add the printed public key line here, and keep the secret key out of the repository: the release
+# scripts read it from MNEMOS_UPDATE_SIGNING_KEY. To rotate, add the new key, ship a release signed
+# with the old one, then sign with the new one and remove the old line once every install has
+# updated past that release.
+mnemos-update-pub:PWRmWy3Xk1lhgmMioglLQTr+0s6oJV5rlFsemy50iO/tuoxmLIjXfw==

@@ -1,0 +1,49 @@
+# cargo-about configuration for THIRD_PARTY_LICENSES.txt, which both
+# prepare_bundled_resources scripts generate into every bundle.
+#
+# Keep `accepted` in sync with [licenses.allow] in deny.toml. Every entry must
+# be compatible with distributing the whole program under AGPL-3.0-only:
+# no GPL-2.0-only, no LGPL or OpenSSL as the only choice, nothing proprietary.
+accepted = [
+    "0BSD",
+    "AGPL-3.0-only",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "NCSA",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
+
+# Our own workspace crates (publish = false) are the program, not third-party
+# components; their license is in LICENSE-AGPL, LICENSE-MIT and NOTICE.
+#
+# This also skips Warp's unpublished git crates, so every one that is not
+# AGPL needs a row in ADDITIONAL_LICENSES in both prepare_bundled_resources
+# scripts (licenses/ holds the texts):
+# - session-sharing-protocol, warp_multi_agent_api: AGPL, Warp's code under
+#   the NOTICE's Warp copyright. No row.
+# - command-corrections: MIT (thefuck's rules), licenses/command-corrections-MIT.txt.
+# - warp-command-signatures, warp-completion-metadata: MIT (Fig's signatures),
+#   licenses/command-signatures-MIT.txt.
+# - warp-workflows, warp-workflows-types: Apache-2.0, with community-contributed
+#   specs, licenses/warp-workflows-Apache-2.0.txt.
+# A new publish = false git dependency needs the same check.
+private = { ignore = true }
+
+# Build and dev dependencies are not redistributed.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+ignore-transitive-dependencies = false
+
+workarounds = ["ring", "rustls"]

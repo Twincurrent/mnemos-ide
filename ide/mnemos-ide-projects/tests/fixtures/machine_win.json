@@ -1,0 +1,102 @@
+{
+  "platform": "win32",
+  "home": "C:\\Users\\bob",
+  "dirs": [
+    {
+      "path": "C:\\code\\Admin",
+      "git": true,
+      "remote": "git@github.com:acme/Admin.git"
+    },
+    {
+      "path": "C:\\code\\portfolio",
+      "git": true,
+      "remote": "https://github.com/acme/Portfolio.git"
+    },
+    {
+      "path": "C:\\code\\mnemos",
+      "git": true,
+      "remote": "https://github.com/acme/TCB.git"
+    },
+    {
+      "path": "C:\\code\\TCB",
+      "git": true,
+      "remote": "https://github.com/bob/TCB.git"
+    },
+    {
+      "path": "C:\\code\\sprocket",
+      "git": true,
+      "remote": "https://github.com/acme/sprocket.git"
+    },
+    {
+      "path": "C:\\code\\gizmo",
+      "git": true,
+      "remote": "https://github.com/acme/gizmo.git"
+    },
+    {
+      "path": "C:\\code\\Doohickey",
+      "git": true,
+      "remote": "https://github.com/acme/Doohickey.git"
+    },
+    {
+      "path": "C:\\code\\ibp-website",
+      "git": true,
+      "remote": "https://github.com/bob/acme-website.git"
+    },
+    {
+      "path": "C:\\code\\gadget",
+      "git": true,
+      "remote": "https://github.com/acme/gadget.git"
+    },
+    {
+      "path": "C:\\code\\Ledger_App",
+      "git": true,
+      "remote": "https://github.com/acme/Ledger_App.git"
+    },
+    {
+      "path": "C:\\code\\skole",
+      "git": false,
+      "remote": null
+    },
+    {
+      "path": "C:\\code\\games",
+      "git": true,
+      "remote": null
+    },
+    {
+      "path": "C:\\code\\notes app",
+      "git": false,
+      "remote": null
+    },
+    {
+      "path": "C:\\development\\globex",
+      "git": true,
+      "remote": "https://gx@dev.azure.com/gx/Globex/_git/globex"
+    }
+  ],
+  "tabs": [
+    {
+      "key": 1,
+      "title": "gizmo",
+      "projectId": "project-1788169499352",
+      "cwds": [
+        "c:\\Users\\bob"
+      ]
+    },
+    {
+      "key": 2,
+      "title": "skole",
+      "projectId": "project-1789463394705",
+      "cwds": [
+        "c:\\code\\skole"
+      ]
+    },
+    {
+      "key": 3,
+      "title": "mnemos",
+      "projectId": "project-1790233543395",
+      "cwds": [
+        "c:\\code\\mnemos"
+      ]
+    }
+  ]
+}

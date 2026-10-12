@@ -1,0 +1,6 @@
+# Upstream Warp commit Mnemos was forked from (github.com/warpdotdev/warp, master):
+# d0f045c "Auto oss vs cost efficient 50/50 A/B test (#9355)", 2026-04-28 23:33 -0400.
+# Found by tree comparison: the private repo's root commit (2026-05-05) contains
+# this commit's changes and not those of the next master commit (3f0ac51, #9388).
+# NOTICE and script/oss/export-public.sh's commit message name it.
+d0f045c01bacbd845a631d07da30f277cfd2b98d

@@ -1,0 +1,62 @@
+###############################################################################
+# Package Spec
+###############################################################################
+
+Summary:     Command-line companion for Mnemos IDE
+Name:        mnemos-cli@@CHANNEL_SUFFIX@@
+Version:     @@VERSION@@
+Release:     @@RELEASE@@
+Vendor:      TwinCurrent ApS
+Url:         @@SOURCE_URL@@
+Packager:    TwinCurrent ApS <hans@twincurrent.dk>
+License:     AGPL-3.0-only
+
+
+# The prefix specifies where the majority of the application files are,
+# allowing the package to be relocatable.
+prefix:      /opt
+
+# We're not including debug info, so don't register the build ID with the
+# machine's registry of build IDs.
+%define _build_id_links none
+
+###############################################################################
+# Description
+###############################################################################
+
+%description
+The command-line companion for Mnemos IDE.
+Mnemos is not affiliated with or endorsed by Warp.
+
+###############################################################################
+# Build rule - how does the package get built?
+###############################################################################
+%build
+
+# Nothing to do here - the application should have already been built before we
+# attempt to package it.
+
+###############################################################################
+# Install rule - where should the files live, post-install?
+###############################################################################
+%install
+
+# Populate the buildroot directory with the package contents, in the
+# appropriate locations.
+mkdir -p %{buildroot}
+OPT_DIR="%{prefix}/mnemos/%{name}" @@WORKSPACEROOT@@/script/linux/bundle_install %{buildroot}
+
+# Set up a symlink from the system's bin dir to our installed executable.
+mkdir -p %{buildroot}%{_bindir}
+ln -s %{prefix}/mnemos/%{name}/@@BINARY_NAME@@ %{buildroot}%{_bindir}/@@BINARY_NAME@@
+
+###############################################################################
+# Files listing - what files will end up in the package?
+###############################################################################
+%files
+
+# Most things go into this directory.
+%{prefix}/mnemos/%{name}
+
+# We also install a symlink in the system bin directory.
+%{_bindir}/@@BINARY_NAME@@

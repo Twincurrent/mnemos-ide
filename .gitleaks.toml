@@ -1,0 +1,12 @@
+# gitleaks config for script/oss/leak-check.sh: upstream's rules plus an
+# allowlist for test files whose fake tokens exist to exercise secret redaction.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake secrets in secret-redaction tests"
+paths = [
+    '''app/src/ai/blocklist/block/secret_redaction_test\.rs$''',
+    '''app/src/terminal/model/secrets_test\.rs$''',
+    '''crates/integration/src/test/secrets\.rs$''',
+]

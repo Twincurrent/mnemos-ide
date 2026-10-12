@@ -1,0 +1,151 @@
+# Pull request checks. The release workflow lives in release.yml.
+#
+#   checks: text checks, cargo-deny (licenses, sources, bans, advisories), rustfmt and the plugin
+#           tests (Linux, no full build).
+#   build:  `cargo check` of the app and script/ide-check (ide/ crate tests and clippy) on
+#           macOS, Windows and Linux. Linux is not a published target, so its leg is advisory.
+#
+# Every script here also runs locally; see script/ide-check and script/oss/grep-checks.sh.
+
+name: PR
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # The ide/ tests must never see a developer's real ~/.claude transcripts; CI has none, and the
+  # test that reads them is opt-in (MNEMOS_TEST_REAL_CLAUDE=1) anyway.
+  MNEMOS_TEST_REAL_CLAUDE: "0"
+
+jobs:
+  checks:
+    name: Text checks, cargo-deny, fmt, plugin tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Unowned names, Warp's own domain, Warp's brand and billing copy (script/check-namespaces plus the
+      # billing-phrase check).
+      - name: Namespace, brand and billing greps
+        run: script/oss/grep-checks.sh
+
+      # Public patterns only: the private pattern file is the owners' and never in CI.
+      - name: Leak check
+        run: script/oss/leak-check.sh
+
+      - name: NOTICE names the upstream base commit
+        run: |
+          base="$(grep -v -E '^[[:space:]]*(#|$)' script/oss/UPSTREAM_BASE | head -n 1 | tr -d '[:space:]')"
+          shas="$(grep -oE '\b[0-9a-f]{40}\b' NOTICE | sort -u)"
+          if [[ "$shas" != "$base" ]]; then
+            echo "NOTICE names $shas, script/oss/UPSTREAM_BASE is $base" >&2
+            exit 1
+          fi
+
+      - name: Claude Code plugin tests
+        run: bash ide/claude-plugin/tests/background-tasks.sh
+
+      - name: cargo-deny (licenses, sources, bans)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses sources bans
+          # The container has no rustup toolchain of its own; install the one rust-toolchain.toml pins.
+          rust-version: "1.92.0"
+
+      # Separate from the step above so a newly published advisory reads as such. deny.toml
+      # carries a reasoned ignore for each advisory accepted so far; script/ide-check runs the
+      # same check locally.
+      - name: cargo-deny (advisories)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+          # The container has no rustup toolchain of its own; install the one rust-toolchain.toml pins.
+          rust-version: "1.92.0"
+
+      # Advisory until the tree has had one `cargo fmt` pass: the Warp -> Mnemos rename left
+      # thousands of import-order diffs, and reformatting them in one go would collide with
+      # every open branch. Flip continue-on-error off after that pass lands.
+      - name: cargo fmt --check (advisory)
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+  build:
+    name: Check and ide-check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # crates/remote_server's build script runs prost-build, which needs protoc.
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential cmake pkg-config \
+            libssl-dev libfreetype-dev libexpat1-dev libgit2-dev libfontconfig1-dev \
+            libasound2-dev libx11-dev libxcb1-dev libxi-dev libxcursor-dev \
+            libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev
+
+      # mnemos_ui's build script compiles the Metal shaders with `xcrun metal`. Xcode 26 ships the
+      # Metal compiler as a separate component, and a runner image may lack it; fetch it then.
+      # (Runners can reach Apple's catalog; script/macos/metal_toolchain is for machines that
+      # cannot.)
+      - name: Ensure the Metal toolchain
+        if: runner.os == 'macOS'
+        run: |
+          xcodebuild -version
+          if ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun -sdk macosx metal --version
+
+      # rustup installs the toolchain rust-toolchain.toml pins on first use.
+      - name: Show toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-${{ matrix.os }}
+
+      - name: cargo check (app, lib and tests)
+        run: cargo check -p mnemos --features gui --lib --tests
+
+      # A scratch HOME keeps the tests off any user data on the runner; CARGO_HOME and
+      # RUSTUP_HOME point back at the real toolchain (script/ide-check's header).
+      - name: script/ide-check (scratch HOME)
+        run: |
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+          scratch="$(mktemp -d)"
+          HOME="$scratch" script/ide-check

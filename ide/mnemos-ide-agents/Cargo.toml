@@ -1,0 +1,17 @@
+[package]
+name = "mnemos-ide-agents"
+version = "0.0.1"
+edition = "2021"
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+mnemos_core.workspace = true
+mnemos_ui_core.workspace = true
+instant.workspace = true
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1.40"

@@ -1,0 +1,21 @@
+[package]
+name = "mnemos-ide-agent-restore"
+version = "0.0.1"
+edition = "2021"
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+mnemos-ide-core = { path = "../mnemos-ide-core" }
+mnemos-ide-sessions = { path = "../mnemos-ide-sessions" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

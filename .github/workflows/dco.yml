@@ -1,0 +1,45 @@
+# Developer Certificate of Origin: every commit in a pull request must carry a
+# "Signed-off-by:" trailer for its author (CONTRIBUTING.md). Make this a required status check
+# in the branch protection of main.
+#
+# Runs on pull_request (not pull_request_target): no secrets and a read-only token, and the
+# checker script is taken from the base commit, not from the pull request.
+
+name: DCO
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Signed-off-by on every commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # The checker comes from the base commit, never from the pull request: a PR that edits
+      # script/oss/check-dco.sh (to `exit 0`, say) must still be judged by the copy it would
+      # replace. The PR's tree is only read as git data. Only while the base does not have the
+      # script yet (the PR that adds it) does the PR's own copy run, and it says so.
+      - name: Check sign-offs with the base branch's checker
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          checker="$RUNNER_TEMP/check-dco.sh"
+          if git cat-file -e "$BASE_SHA:script/oss/check-dco.sh" 2>/dev/null; then
+            git show "$BASE_SHA:script/oss/check-dco.sh" > "$checker"
+          else
+            echo "::warning::$BASE_SHA has no script/oss/check-dco.sh; using the pull request's copy"
+            git show "$HEAD_SHA:script/oss/check-dco.sh" > "$checker"
+          fi
+          bash "$checker" "$BASE_SHA" "$HEAD_SHA"

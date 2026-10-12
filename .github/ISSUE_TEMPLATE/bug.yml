@@ -1,0 +1,90 @@
+name: Bug report
+description: Something in Mnemos IDE does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please search the existing issues first.
+        **Security vulnerabilities must not be reported here**: see SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Run ...
+        3. See ...
+    validations:
+      required: true
+  # GitHub prefills a form field from a query parameter named after its id, but only on
+  # /issues/new?template=bug.yml; the /issues/new/choose chooser drops the query string. The
+  # app's "Send feedback" link (feedback_form_url in app/src/util/links.rs) opens this form
+  # directly with `mnemos-version` (the release tag, GIT_RELEASE_TAG; absent in source builds)
+  # and `os-version`. Keep these ids and the link's parameter names in sync; the link test
+  # checks them against this file.
+  - type: input
+    id: mnemos-version
+    attributes:
+      label: Mnemos version
+      description: |
+        The release name (for example v0.2026.10.01.12.00.stable_01), or the version on
+        Settings > About (for example 0.1.0+2026.10.01.12.00.stable.01, or 0.1.0+source.<commit>
+        for a build from source).
+      placeholder: v0.2026.10.01.12.00.stable_01
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - Windows x64
+        - Windows arm64 (untested)
+        - Linux (untested)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: macOS 26.1 / Windows 11 24H2
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Terminal / blocks
+        - Agents panel
+        - Claude Code plugin (mnemos-agents)
+        - Sessions / restore
+        - Sync
+        - Git tree
+        - Themes / UI
+        - Build from source
+        - Installer / updates
+        - Other
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build
+      options:
+        - Released build
+        - Built from source
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Relevant lines from mnemos.log (and mnemos_update.log for update problems).
+        Remove anything private (paths, tokens, prompts) before pasting.
+      render: text

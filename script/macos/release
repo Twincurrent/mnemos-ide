@@ -1,0 +1,987 @@
+#!/usr/bin/env bash
+#
+# Cut a Mnemos stable release from a Mac.
+#
+# The counterpart to script/windows/release.ps1. macOS builds cannot be produced from the Windows
+# box: hdiutil, codesign, plutil and install_name_tool are all macOS-only. So the Mac builds its own
+# asset and uploads it into the same bucket and the same version directory as the Windows installer.
+#
+# The .dmg is signed with a local Apple Development certificate (ad-hoc with --nosign) and is never
+# notarized. The updater checks the signature's integrity and that it comes from the same team as
+# the running app (app/src/autoupdate/mac.rs), so the team a release is signed by matters.
+#
+#   stable/<version>/MnemosSetup.exe          published by the Windows box
+#   stable/<version>/Mnemos-arm64.dmg         published here
+#
+# Mnemos is arm64-only on macOS. app/src/autoupdate/mac.rs::dmg_name() shells out to `uname -m` and
+# asks for Mnemos-arm64.dmg on Apple Silicon, so that is the only asset a real Mac ever requests.
+# Mnemos.dmg (the universal name) is dead: script/macos/bundle rejects --universal outright.
+#
+# The manifest names one release version for every platform. Its signed payload lists, per
+# platform (macos-aarch64, windows-x86_64, ...), the assets of that version with their sha256 and
+# size, and a client installs only an asset whose bytes match (app/src/autoupdate/mod.rs). Builds
+# from before signing read only the unsigned `stable.version`, so the manifest may only name a
+# version once both assets are in the bucket. Both release scripts enforce that: before building and again right
+# before the manifest upload, each checks the other platform's asset and refuses to publish without
+# it. So a release is two steps. The first box skips the manifest, the second publishes it, and
+# either order works:
+#
+#   Windows first:  ./script/windows/release.ps1 -SkipManifest        # uploads .exe only
+#                   ./script/macos/release --version <that version> \
+#                       --expect-asset MnemosSetup.exe=<sha256>:<size>  # uploads .dmg, publishes
+#
+#   Mac first:      ./script/macos/release --skip-manifest            # uploads .dmg only
+#                   ./script/windows/release.ps1 -Version <that one> `
+#                       -ExpectAsset Mnemos-arm64.dmg=<sha256>:<size>   # builds .exe, publishes
+#
+# The first run prints the exact --expect-asset / -ExpectAsset value for its asset.
+#
+# A bare ./script/macos/release (fresh version, manifest on) therefore always refuses before it
+# builds: a version stamped a second ago cannot have a Windows installer yet. A deliberate Mac-only
+# release needs --allow-missing-windows, and every Windows install then fails its update until an
+# installer for that version appears.
+#
+# Publishing signs only bytes a build vouched for. The .dmg built or read in this run is one; the
+# other platform's asset is another only when its sha256 is passed in with --expect-asset (the
+# Windows run prints the exact flag, and .github/workflows/release.yml passes it between jobs).
+# Each such asset is downloaded from the public URL, exactly as a client would, and must match
+# that sha256 before the manifest and SHA256SUMS are signed over it. An asset that is served but
+# that no build vouched for is never signed. Version strings are stamped in UTC.
+#
+# Requires (see .twincurrent-build/.env or the environment):
+#   CLOUDFLARE_ACCOUNT_ID   Cloudflare account the bucket lives in.
+#   CLOUDFLARE_API_TOKEN    R2 API token with "Object Read & Write" on the release bucket.
+#   MNEMOS_RELEASES_BUCKET  R2 bucket name. Defaults to "mnemos-releases".
+#   MNEMOS_UPDATE_SIGNING_KEY
+#                           The update signing key (mnemos-update-sec:...). Needed to publish the
+#                           manifest; its public key must be in script/update-signing.pub.
+# Optional:
+#   MNEMOS_PUBLIC_RELEASES_URL  Where clients download from. Default
+#                               https://admin.twincurrent.dk/releases.
+#   MNEMOS_MANIFEST_URL         The manifest clients read. Default
+#                               $MNEMOS_PUBLIC_RELEASES_URL/channel_versions.json.
+#   MNEMOS_UPDATE_PUBLIC_KEYS   Comma-separated public keys, instead of script/update-signing.pub.
+#   MNEMOS_UPDATE_BY            Optional update hints, signed into the manifest: an RFC 3339 time
+#   MNEMOS_SOFT_CUTOFF          by which clients should update, the oldest supported version, and
+#   MNEMOS_LAST_PROMINENT_UPDATE  the latest version with a prominent update. Unset, none is sent.
+#   MNEMOS_GITHUB_RELEASE_REPO  owner/repo: also publish the assets, SHA256SUMS and its signature
+#                               as a GitHub release (needs gh signed in). Unset, no GitHub release.
+
+set -euo pipefail
+
+WORKSPACE_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$WORKSPACE_ROOT_DIR"
+
+VERSION=""
+PATCH="01"
+SKIP_BUILD=false
+SKIP_MANIFEST=false
+ALLOW_MISSING_WINDOWS=false
+DRY_RUN=false
+ALLOW_DIRTY=false
+ALLOW_UNPUBLISHED=false
+SIGN_MODE="selfsign"
+EXTRA_BUNDLE_ARGS=()
+
+# arm64-only on macOS; see the header note. Not configurable.
+DMG_NAME="Mnemos-arm64.dmg"
+
+usage() {
+    # Reprint the header block as help. Ends at the first non-comment line rather than a hardcoded
+    # line number, so editing the header above cannot silently truncate --help.
+    awk 'NR>2 && /^#/ { sub(/^# ?/, ""); print; next } NR>2 { exit }' "$0"
+    cat <<'USAGE'
+
+Options:
+  --version <v>      Use an existing version string instead of stamping a new one.
+                     Required when pairing with a Windows build.
+  --patch <nn>       Patch counter for a second release in the same minute. Default 01.
+  --skip-build       Reuse the .dmg already sitting in the bundle output directory. Its version
+                     is read from the .dmg itself (MnemosVersion in Mnemos.app's Info.plist);
+                     with --version, the two must match or nothing is uploaded.
+  --skip-manifest    Upload the .dmg but do not publish the manifest.
+  --expect-asset <name>=<sha256>[:<size>]
+                     The sha256 (and size) the build of another platform's asset produced, as
+                     its release run printed it. Repeatable. Publishing refuses unless the served
+                     bytes match it, and signs no asset without one.
+  --allow-missing-windows
+                     Publish the manifest even though MnemosSetup.exe for this version is not
+                     in the bucket. Every Windows install then fails its update until one is
+                     uploaded. Without it the release refuses, before building, to publish a
+                     version the Windows installs cannot download.
+  --nosign           No certificate: bundle seals the app ad-hoc. Required when running over
+                     SSH, where the login keychain is locked and codesign fails with
+                     errSecInternalComponent. Gatekeeper will quarantine the result, and
+                     installs signed by a team refuse it as an update; see the note below.
+  --dry-run          Build and report; upload nothing.
+  --allow-dirty      Build (or, with --skip-build, upload) a build made from a tree with
+                     uncommitted or untracked changes. Without it the release refuses: the
+                     About page and the bundled NOTICE name the commit as this build's source
+                     (AGPL section 6), so the binary has to be exactly that commit. Never
+                     publish a build made with it.
+  --allow-unpublished
+                     Release a commit the public source repository (script/source-url) does
+                     not have. Without it the release refuses, because the source offer in the
+                     About page and the NOTICE would point at nothing. Only for builds that
+                     never leave TwinCurrent; the bundled NOTICE says so.
+
+Corresponding Source (AGPL section 6): every release is checked, tagged and archived.
+  - The tree must be clean, untracked files included, and its commit must be on the public
+    repository. With --skip-build the same holds for the commit and dirty marker read from the
+    NOTICE inside the .dmg.
+  - The commit gets a local annotated tag release/<version>-macos. Nothing is pushed; push the
+    tag to the public repository yourself.
+  - Mnemos-source-<commit>.tar.gz (git archive of the commit plus `cargo vendor` of every Rust
+    dependency) is built and uploaded next to the .dmg, unless that version already has it.
+
+Signing: defaults to --selfsign, which uses a local "Apple Development" certificate. That is
+enough for Macs registered to the developer account but is NOT notarized, so Gatekeeper still
+requires a one-time right-click > Open (or `xattr -dr com.apple.quarantine /Applications/Mnemos.app`).
+The updater accepts an update only when it is signed by the same team as the running app, so:
+  MNEMOS_MACOS_SIGNING_IDENTITY  Pin the identity to sign with. Use the SHA-1 hash from
+                                 `security find-identity -p codesigning -v`; a name only works
+                                 while it matches exactly one identity. Unpinned, the first
+                                 "Apple Development" identity listed is used, with a warning
+                                 when there are several.
+  MNEMOS_MACOS_SIGNING_TEAM      Refuse to build or publish a .dmg whose signature's
+                                 TeamIdentifier is anything else.
+In selfsign mode a missing identity is an error rather than an ad-hoc fallback, and a .dmg with
+no team (ad-hoc) is refused, --skip-build included. Pass --nosign to ship ad-hoc deliberately;
+installs that are team-signed will refuse it.
+Proper Developer ID signing + notarization needs MNEMOS_DEVELOPER_ID_CERT and friends, which
+script/macos/bundle reads from GCP Secret Manager - those are upstream Warp's secrets, not ours.
+Either way signing needs an UNLOCKED login keychain, so it only works from a Terminal on the Mac,
+never over SSH.
+USAGE
+}
+
+# Digests a build vouched for, as `<name>=<sha256>[:<size>]`: --expect-asset, plus the .dmg of
+# this run once it is hashed. Bash 3.2 (macOS) has no associative arrays, hence the scan.
+EXPECTED_ASSETS=()
+expected_for() {
+    local entry
+    for entry in "${EXPECTED_ASSETS[@]+"${EXPECTED_ASSETS[@]}"}"; do
+        if [[ "${entry%%=*}" == "$1" ]]; then
+            printf '%s\n' "${entry#*=}"
+            return 0
+        fi
+    done
+    return 1
+}
+add_expected_asset() {
+    local spec="$1" name previous
+    if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+=[0-9a-fA-F]{64}(:[0-9]+)?$ ]]; then
+        echo "--expect-asset $spec is not <name>=<sha256>[:<size>]." >&2
+        exit 1
+    fi
+    name="${spec%%=*}"
+    spec="$name=$(printf '%s' "${spec#*=}" | tr 'A-F' 'a-f')"
+    if previous="$(expected_for "$name")"; then
+        # Same sha256 is the same asset; a size on only one side is fine, two sizes must agree.
+        local new="${spec#*=}"
+        if [[ "${previous%%:*}" != "${new%%:*}" ]] \
+            || [[ "$previous" == *:* && "$new" == *:* && "$previous" != "$new" ]]; then
+            echo "Two different digests for $name ($previous and $new); refusing to guess." >&2
+            exit 1
+        fi
+        return 0
+    fi
+    EXPECTED_ASSETS+=("$spec")
+}
+
+while (( "$#" )); do
+    case "$1" in
+        --version) VERSION="$2"; shift 2 ;;
+        --patch) PATCH="$2"; shift 2 ;;
+        --skip-build) SKIP_BUILD=true; shift ;;
+        --skip-manifest) SKIP_MANIFEST=true; shift ;;
+        --expect-asset) add_expected_asset "$2"; shift 2 ;;
+        --allow-missing-windows) ALLOW_MISSING_WINDOWS=true; shift ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        --allow-dirty) ALLOW_DIRTY=true; shift ;;
+        --allow-unpublished) ALLOW_UNPUBLISHED=true; shift ;;
+        --nosign) SIGN_MODE="nosign"; shift ;;
+        --selfsign) SIGN_MODE="selfsign"; shift ;;
+        --arm64) echo "note: --arm64 is implied (macOS is arm64-only); ignoring." >&2; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Corresponding Source (AGPL section 6)
+# ---------------------------------------------------------------------------
+
+# Mnemos IDE: the source offer in the About page and the bundled NOTICE names the commit a build
+# comes from and links to it on the public repository, so a release must be exactly a commit that
+# repository has. Keep these checks in step with script/windows/release.ps1.
+SOURCE_URL="${MNEMOS_SOURCE_URL:-$(grep -v '^[[:space:]]*#' script/source-url | grep -m1 -v '^[[:space:]]*$' || true)}"
+SOURCE_URL="${SOURCE_URL%/}"
+
+# Refuses a tree with uncommitted changes or untracked, non-ignored files. Untracked files count:
+# they are not in the published source of the commit the NOTICE names.
+require_clean_tree() {
+    [[ "$ALLOW_DIRTY" == true ]] && return 0
+    local tree_status
+    if ! tree_status="$(git status --porcelain)"; then
+        echo "git status failed; a release must be built from a git checkout." >&2
+        exit 1
+    fi
+    if [[ -n "$tree_status" ]]; then
+        echo "Refusing to release from a tree with uncommitted or untracked changes:" >&2
+        printf '%s\n' "$tree_status" >&2
+        echo "Commit, remove or gitignore them first (or pass --allow-dirty for a build you will not publish)." >&2
+        exit 1
+    fi
+}
+
+# Refuses a commit the public repository does not have. Fetches its branches and tags into
+# refs/mnemos-public/ (no remote is added) and asks whether any of them contains the commit. The
+# fetch is anonymous (no credential helper, no prompt), so a private repository fails it even
+# when this machine's git could sign in to it: the source offer has to work for everyone.
+PUBLISHED_CHECKED=""
+require_published() {
+    local commit="$1"
+    [[ "$ALLOW_UNPUBLISHED" == true || "$PUBLISHED_CHECKED" == "$commit" ]] && return 0
+    if [[ -z "$SOURCE_URL" ]]; then
+        echo "No source URL (script/source-url or MNEMOS_SOURCE_URL); cannot check that $commit is published." >&2
+        exit 1
+    fi
+    echo "Checking that $commit is on $SOURCE_URL ..."
+    if ! GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/usr/bin/false SSH_ASKPASS=/usr/bin/false \
+        git -c credential.helper= fetch --quiet --no-tags --no-write-fetch-head "$SOURCE_URL" \
+        '+refs/heads/*:refs/mnemos-public/heads/*' '+refs/tags/*:refs/mnemos-public/tags/*'; then
+        echo "Cannot fetch $SOURCE_URL without signing in. The public source repository must exist," >&2
+        echo "be public and be reachable before a release (pass --allow-unpublished for a build" >&2
+        echo "that never leaves TwinCurrent)." >&2
+        exit 1
+    fi
+    if [[ -z "$(git for-each-ref --contains "$commit" refs/mnemos-public)" ]]; then
+        echo "Commit $commit is not on $SOURCE_URL. Push it there first: the About page and the" >&2
+        echo "bundled NOTICE link to it as this build's source (or pass --allow-unpublished for a" >&2
+        echo "build that never leaves TwinCurrent)." >&2
+        exit 1
+    fi
+    PUBLISHED_CHECKED="$commit"
+}
+
+# The commit and dirty marker prepare_bundled_resources wrote into a bundled NOTICE.
+notice_commit() {
+    sed -n 's/^This copy of Mnemos IDE was built from commit \([0-9a-f]\{40\}\)\.$/\1/p' "$1" | head -n 1
+}
+notice_is_dirty() {
+    grep -q '^This is NOT a release build' "$1"
+}
+
+# Creates the local annotated tag release/<version>-macos on the release commit, or keeps it when
+# it already names that commit. Never pushes.
+tag_release() {
+    local commit="$1" tag="release/$VERSION-macos" existing
+    if existing="$(git rev-parse -q --verify "refs/tags/$tag^{commit}")"; then
+        if [[ "$existing" != "$commit" ]]; then
+            echo "Tag $tag already names $existing, not $commit; refusing to move it." >&2
+            exit 1
+        fi
+        echo "Tag $tag already names $commit."
+        return 0
+    fi
+    git tag -a -m "Mnemos $VERSION (macOS), built from $commit" "$tag" "$commit"
+    echo "Tagged $commit as $tag (local only; push it to the public repository)."
+}
+
+# Writes the source archive for a commit: its tree (git archive) plus every Rust dependency
+# vendored by `cargo vendor`, with vendor-config.toml for `cargo build --config vendor-config.toml`.
+make_source_archive() {
+    local commit="$1" out="$2" prefix="mnemos-${1:0:12}" work
+    work="$(mktemp -d)"
+    echo "Building source archive $out ..."
+    git archive --format=tar --prefix="$prefix/" "$commit" | tar -x -C "$work"
+    if ! (cd "$work/$prefix" && cargo vendor --locked --versioned-dirs vendor > vendor-config.toml); then
+        rm -rf "${work:?}"
+        echo "cargo vendor failed; no source archive for $commit." >&2
+        exit 1
+    fi
+    tar -C "$work" -cf - "$prefix" | gzip -n -9 > "$out"
+    rm -rf "${work:?}"
+}
+
+if [[ "$SKIP_BUILD" == false ]]; then
+    require_clean_tree
+    require_published "$(git rev-parse HEAD)"
+fi
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+ENV_FILE="$WORKSPACE_ROOT_DIR/.twincurrent-build/.env"
+# The two secrets are never exported: they are held in shell variables that no child process
+# inherits, and are taken out of this script's environment if the caller exported them. Every
+# build script and proc macro of the app (script/macos/bundle, `cargo vendor`, update_signing's
+# own compile) therefore runs without them. Only the commands that need one get it, scoped to that
+# one command: the R2 token goes to the curl calls (resolve_r2_credentials), the signing key to
+# the prebuilt update_signing binary (update_signing_with_key).
+R2_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
+SIGNING_KEY="${MNEMOS_UPDATE_SIGNING_KEY:-}"
+unset CLOUDFLARE_API_TOKEN MNEMOS_UPDATE_SIGNING_KEY
+if [[ -f "$ENV_FILE" ]]; then
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*([A-Z0-9_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            name="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            value="${value%\"}"; value="${value#\"}"
+            value="${value%\'}"; value="${value#\'}"
+            # Real environment variables win over the file.
+            case "$name" in
+                CLOUDFLARE_API_TOKEN) if [[ -z "$R2_TOKEN" ]]; then R2_TOKEN="$value"; fi ;;
+                MNEMOS_UPDATE_SIGNING_KEY) if [[ -z "$SIGNING_KEY" ]]; then SIGNING_KEY="$value"; fi ;;
+                *)
+                    if [[ -z "${!name:-}" ]]; then
+                        export "$name=$value"
+                    fi
+                    ;;
+            esac
+        fi
+    done < "$ENV_FILE"
+fi
+
+BUCKET="${MNEMOS_RELEASES_BUCKET:-mnemos-releases}"
+PUBLIC_RELEASES_URL="${MNEMOS_PUBLIC_RELEASES_URL:-https://admin.twincurrent.dk/releases}"
+PUBLIC_RELEASES_URL="${PUBLIC_RELEASES_URL%/}"
+MANIFEST_URL="${MNEMOS_MANIFEST_URL:-$PUBLIC_RELEASES_URL/channel_versions.json}"
+
+require_credentials() {
+    local missing=()
+    [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]] && missing+=("CLOUDFLARE_ACCOUNT_ID")
+    [[ -z "$R2_TOKEN" ]] && missing+=("CLOUDFLARE_API_TOKEN")
+    if (( ${#missing[@]} > 0 )); then
+        echo "Missing R2 credentials: ${missing[*]}" >&2
+        echo "Set them in $ENV_FILE or in the environment." >&2
+        exit 1
+    fi
+}
+
+# Access Key ID is the token's own id; Secret Access Key is the SHA-256 of the token value.
+# Uploads use R2's S3 endpoint because wrangler's REST path requires account-wide R2 admin and
+# rejects a token scoped to one bucket.
+#
+# Under `set -euo pipefail` a bare `x="$(curl ...)"` that fails ends the script on the spot with
+# no message, so every curl here records its exit code with `|| rc=$?` and reports it instead.
+# The token, the verify response and the request headers are never printed.
+resolve_r2_credentials() {
+    local verify_url="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/tokens/verify"
+    local response="" rc=0
+    # The header goes through stdin (-H @-), so the token is not on curl's command line either.
+    response="$(printf 'Authorization: Bearer %s\n' "$R2_TOKEN" \
+        | curl -s --max-time 30 -H @- "$verify_url")" || rc=$?
+    if [[ -z "$response" ]]; then
+        echo "Cloudflare token verify request failed (curl exit $rc); no response from api.cloudflare.com." >&2
+        exit 1
+    fi
+
+    R2_ACCESS_KEY_ID="$(printf '%s' "$response" | /usr/bin/python3 -c \
+        'import json,sys; d=json.load(sys.stdin); sys.exit("token verify failed") if not d.get("success") else print(d["result"]["id"])')"
+    R2_SECRET_KEY="$(printf '%s' "$R2_TOKEN" | shasum -a 256 | cut -d' ' -f1)"
+    R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+}
+
+r2_put() {
+    local key="$1" file="$2" content_type="$3" cache_control="$4"
+    echo "Uploading $key ..."
+    local code="" rc=0
+    rm -f /tmp/mnemos-r2-error.txt
+    code="$(curl -s --fail-with-body -o /tmp/mnemos-r2-error.txt -w '%{http_code}' \
+        --aws-sigv4 'aws:amz:auto:s3' \
+        --user "${R2_ACCESS_KEY_ID}:${R2_SECRET_KEY}" \
+        -H "Content-Type: $content_type" \
+        -H "Cache-Control: $cache_control" \
+        -T "$file" \
+        "${R2_ENDPOINT}/${BUCKET}/${key}")" || rc=$?
+    if [[ "$code" != "200" ]]; then
+        head -10 /tmp/mnemos-r2-error.txt 2>/dev/null || true
+        if [[ -z "$code" || "$code" == "000" ]]; then
+            echo "Failed to upload $key: no HTTP response (curl exit $rc)" >&2
+        else
+            echo "Failed to upload $key (HTTP $code, curl exit $rc)" >&2
+        fi
+        exit 1
+    fi
+}
+
+# HTTP status of a published asset, as a client downloading it would see it. -L is essential: the
+# admin route answers 302 for every path before anything asks the bucket, so without it a missing
+# asset looks present. Prints 000 when the request fails outright.
+asset_code() {
+    curl -sIL -o /dev/null -w '%{http_code}' --max-time 30 "$PUBLIC_RELEASES_URL/stable/$1/$2" || true
+}
+
+# ---------------------------------------------------------------------------
+# Update signing
+# ---------------------------------------------------------------------------
+
+# The release-side signing tool (crates/channel_versions/src/bin/update_signing.rs), shared with
+# script/windows/release.ps1 so both sign and stamp the same way. A small crate; dev profile.
+#
+# It is compiled once, by a cargo that never sees a secret (they are not exported, see Config),
+# and then run as a plain binary. Only update_signing_with_key hands it the signing key, through
+# the environment of that one process, so no build script ever runs next to the key.
+UPDATE_SIGNING_BIN=""
+build_update_signing() {
+    [[ -n "$UPDATE_SIGNING_BIN" ]] && return 0
+    cargo build --quiet --locked -p channel_versions --bin update_signing
+    UPDATE_SIGNING_BIN="$(cargo metadata --format-version 1 --no-deps --locked \
+        | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/debug/update_signing"
+    if [[ ! -x "$UPDATE_SIGNING_BIN" ]]; then
+        echo "update_signing was built but is not at $UPDATE_SIGNING_BIN." >&2
+        exit 1
+    fi
+}
+update_signing() {
+    build_update_signing
+    "$UPDATE_SIGNING_BIN" "$@"
+}
+update_signing_with_key() {
+    build_update_signing
+    MNEMOS_UPDATE_SIGNING_KEY="$SIGNING_KEY" "$UPDATE_SIGNING_BIN" "$@"
+}
+
+# The public keys a build from this tree bakes in; app/build.rs reads the same two sources.
+PUBLIC_KEYS_FILE="$WORKSPACE_ROOT_DIR/script/update-signing.pub"
+if [[ -n "${MNEMOS_UPDATE_PUBLIC_KEYS:-}" ]]; then
+    PUBLIC_KEYS_FILE="$(mktemp)"
+    printf '%s\n' "${MNEMOS_UPDATE_PUBLIC_KEYS//,/$'\n'}" > "$PUBLIC_KEYS_FILE"
+fi
+
+# An official build does not compile without a public key (app/build.rs); say so before building.
+require_public_key() {
+    if ! grep -v '^[[:space:]]*#' "$PUBLIC_KEYS_FILE" | grep -q 'mnemos-update-pub:'; then
+        echo "No update signing public key in $PUBLIC_KEYS_FILE." >&2
+        echo "An official build refuses to compile without one; see RELEASING.md, \"Update signing\"." >&2
+        exit 1
+    fi
+}
+
+# Publishing signs the manifest, so the key must be here and must be one the builds trust.
+require_signing_key() {
+    if [[ -z "$SIGNING_KEY" ]]; then
+        echo "MNEMOS_UPDATE_SIGNING_KEY is not set; publishing the manifest needs it (or pass --skip-manifest)." >&2
+        exit 1
+    fi
+    update_signing_with_key check-key --public-keys "$PUBLIC_KEYS_FILE"
+}
+
+# The platforms clients ask about (channel_versions::signed::current_platform) and the asset each
+# downloads: dmg_name() in app/src/autoupdate/mac.rs, installer_file_name() in windows.rs. Keep in
+# step with script/windows/release.ps1. A platform whose asset is not published gets no entry in
+# the signed payload, so its clients see no update instead of failing on a 404.
+PLATFORM_ASSETS=(
+    "macos-aarch64=$DMG_NAME"
+    "windows-x86_64=MnemosSetup.exe"
+    "windows-aarch64=MnemosSetup-arm64.exe"
+)
+
+# Signs the release over the assets a build vouched for (EXPECTED_ASSETS). Each is downloaded from
+# the public URL into a fresh temp dir, exactly as a client would, and must have the expected
+# sha256 (and size, when known); then the signed manifest ($MANIFEST_PATH), SHA256SUMS and
+# SHA256SUMS.sig are written and checked over those bytes. An asset that is served but that no
+# build vouched for is left out, so its platform sees no update rather than unvouched bytes.
+# Sets SIGNED_DIR. Uploads nothing.
+SIGNED_DIR=""
+sign_release() {
+    SIGNED_DIR="$(mktemp -d)"
+    local sums="$SIGNED_DIR/SHA256SUMS" asset_args=() entry platform name code file digest sha size
+    local expected expected_sha expected_size
+    : > "$sums"
+    for entry in "${PLATFORM_ASSETS[@]}"; do
+        platform="${entry%%=*}"
+        name="${entry#*=}"
+        code="$(asset_code "$VERSION" "$name")"
+        if ! expected="$(expected_for "$name")"; then
+            if [[ "$code" == "200" ]]; then
+                echo "WARNING: $name is served for $VERSION, but no build in this run vouched for its bytes (--expect-asset); $platform gets no release in this manifest." >&2
+            else
+                echo "No $name for $VERSION (HTTP $code); $platform gets no release in this manifest."
+            fi
+            continue
+        fi
+        if [[ "$code" != "200" ]]; then
+            echo "$name was built for $VERSION but is not downloadable (HTTP $code); manifest NOT published." >&2
+            exit 1
+        fi
+        expected_sha="${expected%%:*}"
+        expected_size=""
+        [[ "$expected" == *:* ]] && expected_size="${expected#*:}"
+        file="$SIGNED_DIR/$name"
+        echo "Downloading $name to check it against its build ..."
+        if ! curl -sfL --max-time 1800 -o "$file" "$PUBLIC_RELEASES_URL/stable/$VERSION/$name"; then
+            echo "Cannot download $PUBLIC_RELEASES_URL/stable/$VERSION/$name; manifest NOT published." >&2
+            exit 1
+        fi
+        digest="$(update_signing hash "$file")"
+        sha="${digest% *}"
+        size="${digest#* }"
+        if [[ "$sha" != "$expected_sha" ]]; then
+            echo "$name as served ($sha) is not the bytes its build produced ($expected_sha); manifest NOT published." >&2
+            exit 1
+        fi
+        if [[ -n "$expected_size" && "$size" != "$expected_size" ]]; then
+            echo "$name as served is $size bytes, its build produced $expected_size; manifest NOT published." >&2
+            exit 1
+        fi
+        asset_args+=(--asset "$platform=$name:$sha:$size")
+        printf '%s  %s\n' "$sha" "$name" >> "$sums"
+    done
+    if (( ${#asset_args[@]} == 0 )); then
+        echo "No asset of $VERSION is both downloadable and vouched for; manifest NOT published." >&2
+        exit 1
+    fi
+    if [[ -n "${SOURCE_NAME:-}" && -f "${SOURCE_PATH:-}" ]]; then
+        digest="$(update_signing hash "$SOURCE_PATH")"
+        printf '%s  %s\n' "${digest% *}" "$SOURCE_NAME" >> "$sums"
+    fi
+    # Optional update hints, signed into the payload (see `update_signing manifest --help`).
+    local hint_args=()
+    if [[ -n "${MNEMOS_UPDATE_BY:-}" ]]; then
+        hint_args+=(--update-by "$MNEMOS_UPDATE_BY")
+    fi
+    if [[ -n "${MNEMOS_SOFT_CUTOFF:-}" ]]; then
+        hint_args+=(--soft-cutoff "$MNEMOS_SOFT_CUTOFF")
+    fi
+    if [[ -n "${MNEMOS_LAST_PROMINENT_UPDATE:-}" ]]; then
+        hint_args+=(--last-prominent-update "$MNEMOS_LAST_PROMINENT_UPDATE")
+    fi
+    update_signing_with_key manifest --version "$VERSION" "${asset_args[@]}" \
+        ${hint_args[@]+"${hint_args[@]}"} --out "$MANIFEST_PATH"
+    update_signing verify-manifest --manifest "$MANIFEST_PATH" --public-keys "$PUBLIC_KEYS_FILE" \
+        --expect-version "$VERSION"
+    update_signing_with_key sign-sums --in "$sums" --out "$SIGNED_DIR/SHA256SUMS.sig"
+    update_signing verify-sums --in "$sums" --sig "$SIGNED_DIR/SHA256SUMS.sig" \
+        --public-keys "$PUBLIC_KEYS_FILE"
+}
+
+# The release version the live manifest names, or nothing.
+live_version() {
+    curl -sfL --max-time 20 "$MANIFEST_URL" 2>/dev/null \
+        | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["stable"]["version"])' 2>/dev/null \
+        || true
+}
+
+# Optional GitHub release with the downloaded assets, SHA256SUMS and its signature. A failure here
+# only warns: the manifest is already live.
+publish_github_release() {
+    local repo="${MNEMOS_GITHUB_RELEASE_REPO:-}" tag="release/$VERSION" files=()
+    if [[ -z "$repo" ]]; then
+        echo "MNEMOS_GITHUB_RELEASE_REPO is not set; no GitHub release."
+        return 0
+    fi
+    files=("$SIGNED_DIR"/*)
+    if gh release view "$tag" -R "$repo" >/dev/null 2>&1; then
+        gh release upload "$tag" -R "$repo" --clobber "${files[@]}" \
+            || echo "WARNING: uploading to the GitHub release $tag on $repo failed." >&2
+    else
+        gh release create "$tag" -R "$repo" --target "$BUILT_COMMIT" --title "Mnemos $VERSION" \
+            --notes "Mnemos $VERSION, built from $BUILT_COMMIT. Check downloads against SHA256SUMS; SHA256SUMS.sig is signed with a key listed in script/update-signing.pub (update_signing verify-sums checks it)." \
+            "${files[@]}" \
+            || echo "WARNING: creating the GitHub release $tag on $repo failed." >&2
+    fi
+}
+
+# The identity --selfsign signs with, printed as its SHA-1 hash; prints nothing when there is none.
+#
+# MNEMOS_MACOS_SIGNING_IDENTITY pins it. The SHA-1 hash from `security find-identity -p codesigning
+# -v` is the recommended form: a name can match several certificates. A pin that matches no valid
+# identity, or more than one, is an error. Unpinned, it is the first "Apple Development" identity
+# listed, which is keychain order rather than a choice, so more than one is warned about. Keep this
+# in step with select_signing_identity in script/macos/bundle, which signs with what it returns.
+select_signing_identity() {
+    local identities matches hashes count
+    identities="$(security find-identity -p codesigning -v 2>/dev/null | grep -E '^[[:space:]]*[0-9]+\)' || true)"
+    if [[ -n "${MNEMOS_MACOS_SIGNING_IDENTITY:-}" ]]; then
+        matches="$(printf '%s\n' "$identities" | grep -iF -- "$MNEMOS_MACOS_SIGNING_IDENTITY" || true)"
+    else
+        matches="$(printf '%s\n' "$identities" | grep "Apple Development" || true)"
+    fi
+    hashes="$(printf '%s\n' "$matches" | awk 'NF { print $2 }' | awk '!seen[$0]++')"
+    count="$(printf '%s\n' "$hashes" | grep -c . || true)"
+    if [[ -n "${MNEMOS_MACOS_SIGNING_IDENTITY:-}" ]]; then
+        if [[ "$count" -eq 0 ]]; then
+            echo "MNEMOS_MACOS_SIGNING_IDENTITY ($MNEMOS_MACOS_SIGNING_IDENTITY) is not a valid codesigning identity in this keychain." >&2
+            return 1
+        fi
+        if [[ "$count" -gt 1 ]]; then
+            echo "MNEMOS_MACOS_SIGNING_IDENTITY ($MNEMOS_MACOS_SIGNING_IDENTITY) matches $count identities; pin one by its SHA-1 hash:" >&2
+            printf '%s\n' "$matches" >&2
+            return 1
+        fi
+    elif [[ "$count" -gt 1 ]]; then
+        echo "WARNING: $count Apple Development identities in the keychain; signing with the first one listed:" >&2
+        printf '%s\n' "$matches" | head -1 >&2
+        echo "WARNING: pin one with MNEMOS_MACOS_SIGNING_IDENTITY=<SHA-1 hash> so the signing team cannot change with keychain order." >&2
+    fi
+    printf '%s\n' "$hashes" | head -1
+}
+
+# ---------------------------------------------------------------------------
+# The artifact
+# ---------------------------------------------------------------------------
+
+# script/macos/bundle builds under the `release-lto` profile. `rlto` is a separate Cargo profile
+# that merely inherits from it (Cargo.toml) and lands in its own target dir - that one is what the
+# Windows path uses. Looking in target/rlto here finds nothing.
+BUNDLE_OUT_DIR="target/release-lto/bundle/osx"
+DMG_PATH="$BUNDLE_OUT_DIR/$DMG_NAME"
+
+require_dmg() {
+    if [[ ! -f "$DMG_PATH" ]]; then
+        if [[ "$SKIP_BUILD" == true ]]; then
+            echo "No .dmg at $DMG_PATH. Drop --skip-build to build it." >&2
+        else
+            echo "script/macos/bundle finished but left no .dmg at $DMG_PATH." >&2
+        fi
+        exit 1
+    fi
+}
+
+# The DMG is mounted read-only on a private temp dir, never under /Volumes, and only that one
+# mount point is ever detached.
+DMG_MNT=""
+detach_dmg() {
+    if [[ -n "$DMG_MNT" ]]; then
+        hdiutil detach "$DMG_MNT" -quiet || hdiutil detach "$DMG_MNT" -force || true
+        rmdir "$DMG_MNT" 2>/dev/null || true
+        DMG_MNT=""
+    fi
+}
+trap detach_dmg EXIT
+
+# What the DMG really contains, read from the artifact instead of trusted from the command line.
+# MnemosVersion is the --release-tag script/update_plist wrote into Info.plist; the client compiles
+# the same tag in as GIT_RELEASE_TAG, so it is the version the installed app will report. Publishing
+# a DMG under any other version makes every client download it, find itself still "behind", and
+# reinstall it again on every check until the next real release.
+BUILT_VERSION=""
+BUILT_TEAM=""
+BUILT_COMMIT=""
+BUILT_DIRTY=false
+read_dmg_info() {
+    DMG_MNT="$(mktemp -d)"
+    if ! hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$DMG_MNT" "$DMG_PATH" >/dev/null; then
+        detach_dmg
+        echo "Cannot mount $DMG_PATH to read its version." >&2
+        exit 1
+    fi
+    local app="$DMG_MNT/Mnemos.app"
+    BUILT_VERSION="$(plutil -extract MnemosVersion raw -o - "$app/Contents/Info.plist" 2>/dev/null)" || true
+    # codesign -dv prints to stderr and fails outright on an unsigned bundle; ad-hoc reports "not set".
+    BUILT_TEAM="$({ codesign -dv "$app" 2>&1 || true; } | sed -n 's/^TeamIdentifier=//p')" || true
+    if [[ "$BUILT_TEAM" == "not set" ]]; then
+        BUILT_TEAM=""
+    fi
+    local notice="$app/Contents/Resources/NOTICE"
+    if [[ -f "$notice" ]]; then
+        BUILT_COMMIT="$(notice_commit "$notice")"
+        if notice_is_dirty "$notice"; then
+            BUILT_DIRTY=true
+        fi
+    fi
+    detach_dmg
+}
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+
+# The client parses the embedded timestamp out of this string to order releases
+# (crates/channel_versions/src/lib.rs). That ordering is what stops a client updating backwards.
+#
+# A new version is stamped only for a fresh build. --skip-build reuses bytes that already carry a
+# version, so that version is the release: stamping a new one would publish the old build under a
+# new name, which is exactly the reinstall loop described above.
+if [[ "$SKIP_BUILD" == true ]]; then
+    require_dmg
+    read_dmg_info
+    if [[ -z "$VERSION" ]]; then
+        if [[ -z "$BUILT_VERSION" ]]; then
+            echo "Cannot read the version from $DMG_PATH (no MnemosVersion in its Info.plist), pass --version." >&2
+            exit 1
+        fi
+        VERSION="$BUILT_VERSION"
+        echo "--skip-build: $DMG_PATH was built as $VERSION; releasing it under that version."
+    fi
+elif [[ -z "$VERSION" ]]; then
+    # Stamped in UTC. Releases before the switch were stamped in local time, up to two hours ahead,
+    # so stamp-version refuses a version that would not sort after the live one or any local
+    # release tag, and says how long to wait.
+    previous_args=()
+    live="$(live_version)"
+    [[ -n "$live" ]] && previous_args+=(--previous "$live")
+    while IFS= read -r tag; do
+        [[ -n "$tag" ]] && previous_args+=(--previous "$tag")
+    done < <(git tag -l 'release/v*' | sed -E 's#^release/##; s#-(macos|windows)$##')
+    VERSION="$(update_signing stamp-version --patch "$PATCH" "${previous_args[@]+"${previous_args[@]}"}")"
+fi
+
+if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.stable_[0-9]+$ ]]; then
+    echo "Version '$VERSION' is not in the form v0.<yyyy.MM.dd.HH.mm>.stable_<nn>. The client cannot order it." >&2
+    exit 1
+fi
+
+echo "Releasing Mnemos $VERSION (macOS, $DMG_NAME, sign mode: $SIGN_MODE)"
+
+# The build bakes in the update public keys, and publishing signs with the matching secret key;
+# both are checked before a 20-minute build rather than after it.
+if [[ "$SKIP_BUILD" == false ]]; then
+    require_public_key
+fi
+if [[ "$SKIP_MANIFEST" == false && "$DRY_RUN" == false ]]; then
+    require_signing_key
+fi
+
+# Fail before the build, not after it. Signing needs the login keychain unlocked; over SSH it is
+# not, and codesign fails with errSecInternalComponent, which would otherwise only surface when
+# bundle signs the app ~20 minutes into the build. Probe the exact identity bundle will use.
+if [[ "$SIGN_MODE" == "selfsign" && "$SKIP_BUILD" == false ]]; then
+    if ! ident="$(select_signing_identity)"; then
+        exit 1
+    fi
+    if [[ -z "$ident" ]]; then
+        echo "No valid Apple Development identity in the keychain; pass --nosign to ship ad-hoc deliberately," >&2
+        echo "but team-signed installs will refuse it." >&2
+        exit 1
+    fi
+    echo "Signing identity: $ident"
+    probe="$(mktemp)"; cp /bin/echo "$probe"
+    if ! codesign --force --sign "$ident" "$probe" >/dev/null 2>&1; then
+        rm -f "$probe"
+        echo "codesign cannot use the login keychain from this session (errSecInternalComponent)." >&2
+        echo "You are probably over SSH. Run this from a Terminal on the Mac, or pass --nosign." >&2
+        exit 1
+    fi
+    rm -f "$probe"
+    # Hand bundle the exact identity the probe tested (a SHA-1 hash, so it resolves to the same
+    # one), and forbid its ad-hoc fallback: a release asked to self-sign must not ship ad-hoc.
+    export MNEMOS_MACOS_SIGNING_IDENTITY="$ident"
+    export MNEMOS_SELFSIGN_STRICT=1
+fi
+
+# The manifest carries one version for every platform, so publishing it names a version the
+# Windows installs will also try to download. Check that their asset exists before spending a build
+# on a release that would then refuse to publish.
+if [[ "$SKIP_MANIFEST" == false ]]; then
+    exe_code="$(asset_code "$VERSION" MnemosSetup.exe)"
+    if [[ "$exe_code" == "200" ]] && ! expected_for MnemosSetup.exe >/dev/null; then
+        # Served but not vouched for: sign_release would leave Windows out of the manifest.
+        exe_code="200, but no --expect-asset MnemosSetup.exe=<sha256> from its build"
+    fi
+    if [[ "$exe_code" != "200" ]]; then
+        if [[ "$ALLOW_MISSING_WINDOWS" == true ]]; then
+            echo "WARNING: MnemosSetup.exe for $VERSION is not in the bucket (HTTP $exe_code); publishing anyway (--allow-missing-windows)." >&2
+        elif [[ "$DRY_RUN" == true ]]; then
+            echo "WARNING: MnemosSetup.exe for $VERSION is not in the bucket (HTTP $exe_code). A real run would refuse here." >&2
+        else
+            echo "MnemosSetup.exe for $VERSION is not in the bucket (HTTP $exe_code)." >&2
+            echo "Publishing the manifest would point every Windows install at a version it cannot download." >&2
+            echo "Release the Mac side with --skip-manifest and publish once the .exe is up, or pass" >&2
+            echo "--allow-missing-windows if no Windows install needs this version." >&2
+            exit 1
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+
+if [[ "$SKIP_BUILD" == false ]]; then
+    echo "Building bundle..."
+    # --arch takes aarch64, not arm64. --dmg-name-suffix arm64 is what produces Mnemos-arm64.dmg,
+    # which is the name the updater asks for on Apple Silicon.
+    BUNDLE_ARGS=(--channel stable --release-tag "$VERSION" --arch aarch64 --dmg-name-suffix arm64)
+    BUNDLE_ARGS+=("--$SIGN_MODE")
+    if [[ "$ALLOW_UNPUBLISHED" == true ]]; then
+        # prepare_bundled_resources then says in the bundled NOTICE that this is an internal build.
+        export MNEMOS_SOURCE_UNPUBLISHED=1
+    fi
+    # Only an official release gets an updater (app/build.rs); a plain script/bundle does not.
+    export MNEMOS_OFFICIAL_RELEASE=1
+    ./script/macos/bundle "${BUNDLE_ARGS[@]}" "${EXTRA_BUNDLE_ARGS[@]+"${EXTRA_BUNDLE_ARGS[@]}"}"
+
+    require_dmg
+    read_dmg_info
+fi
+
+# Covers both a fresh build (bundle must have stamped the version it was given) and --skip-build
+# with an explicit --version (the leftover DMG must be the build that version names).
+if [[ -z "$BUILT_VERSION" ]]; then
+    if [[ "$SKIP_BUILD" == false ]]; then
+        echo "The freshly built $DMG_PATH has no MnemosVersion in its Info.plist; refusing to publish it." >&2
+        exit 1
+    fi
+    echo "WARNING: cannot read the version from $DMG_PATH; trusting --version $VERSION." >&2
+elif [[ "$BUILT_VERSION" != "$VERSION" ]]; then
+    echo "DMG was built as $BUILT_VERSION, refusing to publish it as $VERSION." >&2
+    exit 1
+fi
+
+# The updater refuses an update signed by a different team than the running app, and an ad-hoc
+# one when the running app is team-signed (app/src/autoupdate/mac.rs). The team comes from the
+# signature in the DMG, so a stale --skip-build DMG is held to the same rule as a fresh one.
+echo "DMG signature: TeamIdentifier=${BUILT_TEAM:-none (ad-hoc)}"
+if [[ "$SIGN_MODE" == "selfsign" ]]; then
+    if [[ -z "$BUILT_TEAM" ]]; then
+        echo "The DMG is ad-hoc signed but the sign mode is selfsign; team-signed installs would refuse it." >&2
+        echo "Pass --nosign to publish an ad-hoc build deliberately." >&2
+        exit 1
+    fi
+    if [[ -n "${MNEMOS_MACOS_SIGNING_TEAM:-}" && "$BUILT_TEAM" != "$MNEMOS_MACOS_SIGNING_TEAM" ]]; then
+        echo "The DMG is signed by team $BUILT_TEAM, not MNEMOS_MACOS_SIGNING_TEAM=$MNEMOS_MACOS_SIGNING_TEAM; refusing to publish it." >&2
+        exit 1
+    fi
+elif [[ -n "${MNEMOS_MACOS_SIGNING_TEAM:-}" ]]; then
+    echo "WARNING: --nosign: installs signed by team $MNEMOS_MACOS_SIGNING_TEAM will refuse this DMG as an update." >&2
+fi
+
+# The source checks again, on what the DMG says it was built from: with --skip-build this is the
+# only check, and for a fresh build it confirms the bundle recorded the commit that was checked.
+if [[ -z "$BUILT_COMMIT" ]]; then
+    echo "The NOTICE in $DMG_PATH names no source commit; refusing to publish it." >&2
+    exit 1
+fi
+if [[ "$BUILT_DIRTY" == true && "$ALLOW_DIRTY" == false ]]; then
+    echo "$DMG_PATH was built from a tree with uncommitted changes (its NOTICE says so); refusing to publish it." >&2
+    exit 1
+fi
+if [[ "$SKIP_BUILD" == false && "$BUILT_COMMIT" != "$(git rev-parse HEAD)" ]]; then
+    echo "$DMG_PATH says it was built from $BUILT_COMMIT, but HEAD is $(git rev-parse HEAD); refusing to publish it." >&2
+    exit 1
+fi
+require_published "$BUILT_COMMIT"
+SOURCE_NAME="Mnemos-source-$BUILT_COMMIT.tar.gz"
+SOURCE_PATH="$BUNDLE_OUT_DIR/$SOURCE_NAME"
+echo "Source: commit $BUILT_COMMIT${SOURCE_URL:+ ($SOURCE_URL/tree/$BUILT_COMMIT)}"
+
+DMG_SIZE="$(du -h "$DMG_PATH" | cut -f1)"
+DMG_SHA="$(shasum -a 256 "$DMG_PATH" | cut -d' ' -f1)"
+DMG_BYTES="$(stat -f %z "$DMG_PATH")"
+echo "Bundle: $DMG_PATH ($DMG_SIZE, sha256 $DMG_SHA)"
+# The .dmg this run holds is the one asset it can vouch for itself.
+DMG_EXPECT="$DMG_NAME=$DMG_SHA:$DMG_BYTES"
+add_expected_asset "$DMG_EXPECT"
+
+# ---------------------------------------------------------------------------
+# Manifest
+# ---------------------------------------------------------------------------
+
+# Written at publish time by sign_release: the legacy dev/preview/stable fields (ChannelVersions
+# requires all three) plus the signed per-platform payload.
+MANIFEST_PATH="$BUNDLE_OUT_DIR/channel_versions.json"
+
+echo
+echo "Would tag $BUILT_COMMIT as release/$VERSION-macos (local only)."
+echo "Would upload:"
+echo "  $BUCKET/stable/$VERSION/$DMG_NAME"
+echo "  $BUCKET/stable/$VERSION/$SOURCE_NAME (unless already there)"
+if [[ "$SKIP_MANIFEST" == false ]]; then
+    echo "  $BUCKET/stable/$VERSION/SHA256SUMS and SHA256SUMS.sig"
+    echo "  $BUCKET/channel_versions.json (signed)"
+fi
+echo
+
+if [[ "$DRY_RUN" == true ]]; then
+    echo "Dry run - nothing uploaded."
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Upload
+# ---------------------------------------------------------------------------
+
+require_credentials
+resolve_r2_credentials
+
+tag_release "$BUILT_COMMIT"
+
+# The source archive goes up before anything that names this release. A Windows build of the same
+# commit may have uploaded it already.
+if [[ "$(asset_code "$VERSION" "$SOURCE_NAME")" == "200" ]]; then
+    echo "$SOURCE_NAME is already in the bucket for $VERSION."
+else
+    make_source_archive "$BUILT_COMMIT" "$SOURCE_PATH"
+    r2_put "stable/$VERSION/$SOURCE_NAME" "$SOURCE_PATH" \
+        'application/gzip' 'public, max-age=31536000, immutable'
+fi
+
+# Asset first: the manifest must never advertise a version whose bytes aren't there yet.
+r2_put "stable/$VERSION/$DMG_NAME" "$DMG_PATH" \
+    'application/x-apple-diskimage' 'public, max-age=31536000, immutable'
+echo "Uploaded digest, for the run that publishes: --expect-asset $DMG_EXPECT"
+# release.yml hands this to the publish job, which signs nothing it was not told about.
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    echo "digest=$DMG_EXPECT" >> "$GITHUB_OUTPUT"
+fi
+
+if [[ "$SKIP_MANIFEST" == false ]]; then
+    # Last check before the manifest names this version: both assets must be downloadable, the
+    # .dmg that was just uploaded included. The .dmg is already up at this point, so a refusal
+    # leaves it there unadvertised and says how to publish later.
+    publish_ok=true
+    dmg_code="$(asset_code "$VERSION" "$DMG_NAME")"
+    exe_code="$(asset_code "$VERSION" MnemosSetup.exe)"
+    if [[ "$exe_code" == "200" ]] && ! expected_for MnemosSetup.exe >/dev/null; then
+        exe_code="200, but no --expect-asset MnemosSetup.exe=<sha256> from its build"
+    fi
+    if [[ "$dmg_code" != "200" ]]; then
+        echo "$DMG_NAME for $VERSION is not downloadable after its upload (HTTP $dmg_code)." >&2
+        publish_ok=false
+    fi
+    if [[ "$exe_code" != "200" ]]; then
+        if [[ "$ALLOW_MISSING_WINDOWS" == true ]]; then
+            echo "WARNING: publishing $VERSION without MnemosSetup.exe (HTTP $exe_code). Every Windows install" >&2
+            echo "WARNING: fails its update until that installer is uploaded (--allow-missing-windows)." >&2
+        else
+            echo "MnemosSetup.exe for $VERSION is not in the bucket (HTTP $exe_code)." >&2
+            publish_ok=false
+        fi
+    fi
+    if [[ "$publish_ok" == false ]]; then
+        echo >&2
+        echo "$DMG_NAME uploaded, manifest NOT published." >&2
+        echo "Publish $VERSION once both assets return 200:" >&2
+        echo "  ./script/windows/release.ps1 -PublishOnly -Version $VERSION -ExpectAsset $DMG_EXPECT,<the .exe's>" >&2
+        echo "  ./script/macos/release --skip-build --version $VERSION --expect-asset MnemosSetup.exe=<sha256>   # or from here" >&2
+        exit 1
+    fi
+
+    sign_release
+    r2_put "stable/$VERSION/SHA256SUMS" "$SIGNED_DIR/SHA256SUMS" 'text/plain; charset=utf-8' 'public, max-age=60'
+    r2_put "stable/$VERSION/SHA256SUMS.sig" "$SIGNED_DIR/SHA256SUMS.sig" 'text/plain; charset=utf-8' 'public, max-age=60'
+    # The manifest goes last: it is what tells clients the release exists.
+    r2_put 'channel_versions.json' "$MANIFEST_PATH" 'application/json' 'public, max-age=60'
+
+    echo
+    echo "Verifying published manifest..."
+    published="$(mktemp)"
+    if curl -sfL --max-time 20 -o "$published" "$MANIFEST_URL" \
+        && update_signing verify-manifest --manifest "$published" --public-keys "$PUBLIC_KEYS_FILE" \
+            --expect-version "$VERSION" >/dev/null; then
+        echo "  $MANIFEST_URL -> $VERSION, signature OK"
+    else
+        echo "  WARNING: $MANIFEST_URL does not serve a verified manifest for $VERSION yet. It may still be caching." >&2
+    fi
+    rm -f "$published"
+
+    publish_github_release
+fi
+
+echo
+if [[ "$SKIP_MANIFEST" == true ]]; then
+    echo "Uploaded $VERSION (macOS). The manifest is untouched, so nothing advertises this version yet."
+    echo "Publish it once the Windows installer for this version is in the bucket:"
+    echo "  ./script/windows/release.ps1 -Version $VERSION -ExpectAsset $DMG_EXPECT"
+    echo "      # build the .exe, then publish"
+    echo "  ./script/windows/release.ps1 -PublishOnly -Version $VERSION -ExpectAsset $DMG_EXPECT,<the .exe's>"
+    echo "      # if that .exe is already up"
+else
+    echo "Released $VERSION (macOS)."
+    echo 'Running clients pick it up within 10 minutes, or on next app focus.'
+fi

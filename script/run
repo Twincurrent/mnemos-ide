@@ -1,0 +1,210 @@
+#!/bin/bash
+#
+# Cross-platform entrypoint for running a local Mnemos build.
+#
+# On macOS this delegates to `./script/macos/run`, which builds and runs Mnemos
+# as a real `.app` bundle (with code signing, plist updates, etc.). On Linux
+# and Windows it invokes `cargo run` directly for the appropriate binary.
+#
+# This script owns all cross-platform setup (binary name, the default dev data
+# profile, and mapping legacy `--features` entries to environment variables),
+# so platform-specific scripts can assume those values are already provided
+# via environment variables.
+
+set -e
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+cd "${REPO_ROOT}"
+
+OS_TYPE="$(uname -s)"
+
+FEATURES="gui"
+
+MNEMOS_BIN_NAME="mnemos"
+MNEMOS_CHANNEL="stable"
+
+# Shared argument parsing. macOS-specific flags (--dont-open,
+# --open_with_launchd, --generate-schema) are forwarded through MAC_ARGS and
+# silently ignored on other platforms.
+MAC_ARGS=()
+CARGO_PARAMS=()
+MNEMOS_ARGS=()
+
+# Whether the build keeps debug assertions. mnemos_core honours
+# MNEMOS_DATA_PROFILE only then (ChannelState::data_profile); mnemos_ide_core
+# honours it and MNEMOS_DATA_DIR in every build. --release and the release profiles turn them
+# off; dev, dev-* and the *debug_assertions profiles (and rltoda) keep them on.
+DEBUG_ASSERTIONS=true
+
+while (( "$#" )); do
+  case "$1" in
+    --)
+      shift
+      MNEMOS_ARGS=("$@")
+      break
+      ;;
+    --features)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        FEATURES="$FEATURES,$2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    --host-id)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        export MNEMOS_CLOUD_MODE_DEFAULT_HOST="$2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    --release)
+      DEBUG_ASSERTIONS=false
+      CARGO_PARAMS+=("$1")
+      MAC_ARGS+=("$1")
+      shift
+      ;;
+    --profile)
+      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
+        case "$2" in
+          dev|dev-*|*debug_assertions|rltoda) DEBUG_ASSERTIONS=true ;;
+          *) DEBUG_ASSERTIONS=false ;;
+        esac
+        CARGO_PARAMS+=("$1" "$2")
+        MAC_ARGS+=("$1" "$2")
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      # Unknown flags (including macOS-only flags like --dont-open) and any
+      # positional arguments are forwarded to the platform-specific script.
+      MAC_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# These cargo features were removed and replaced by environment variables read
+# by the optional mnemos-channel-config generator. Intercept them here so that
+# existing --features invocations keep working.
+for mapping in \
+    "with_local_server:WITH_LOCAL_SERVER" \
+    "with_local_session_sharing_server:WITH_LOCAL_SESSION_SHARING_SERVER" \
+    "with_sandbox_telemetry:WITH_SANDBOX_TELEMETRY"; do
+    feature="${mapping%%:*}"
+    env_var="${mapping##*:}"
+    if [[ ",$FEATURES," =~ ,"$feature", ]]; then
+        export "$env_var"=1
+        FEATURES="$(echo "$FEATURES" | sed "s/,$feature,/,/; s/^$feature,//; s/,$feature$//; s/^$feature$//")"
+        FEATURES="$(echo "$FEATURES" | sed 's/,,*/,/g; s/^,//; s/,$//')"
+        echo "Note: '$feature' is no longer a cargo feature; setting $env_var=1 instead."
+    fi
+done
+
+# Dev runs use their own data profile by default, so they do not share the
+# installed app's sync login (keyring service tcbv2-<profile>) or, in debug
+# builds, its ~/.mnemos config dir. Opt out with an empty value:
+#   MNEMOS_DATA_PROFILE= ./script/run
+# An empty variable is unset rather than exported: parts of the app would treat
+# an empty profile as a profile and others as none.
+if [[ -z "${MNEMOS_DATA_PROFILE-dev}" ]]; then
+  unset MNEMOS_DATA_PROFILE
+else
+  export MNEMOS_DATA_PROFILE="${MNEMOS_DATA_PROFILE-dev}"
+fi
+
+# MNEMOS_DATA_DIR was called TCB_DATA_DIR before the Mnemos IDE rename. The app
+# still reads the old name when the new one is unset or empty; adopt it here
+# the same way so the notes below and the default further down agree with it.
+if [[ -z "${MNEMOS_DATA_DIR:-}" && -n "${TCB_DATA_DIR:-}" ]]; then
+  export MNEMOS_DATA_DIR="$TCB_DATA_DIR"
+fi
+
+# The profile does not move the Mnemos IDE store (projects.json,
+# workspace_state.json, agent_sessions.json), so redirect that too. The store
+# must move exactly
+# when the app's SQLite workspace snapshot moves: its pane uuids only mean
+# something against that snapshot, so a split leaves the two describing
+# different tabs and breaks tab and agent-session restore.
+# - macOS: only with debug assertions. The .app carries the installed app's
+#   bundle id, and a release-like build ignores the profile in mnemos_core, so
+#   its SQLite snapshot stays the installed app's.
+# - Windows (Git Bash): in every build. `cargo run` is unbundled, so the dev
+#   app id already gives the run its own SQLite state and logs. The value is a
+#   drive-letter path built from APPDATA; MSYS rewrites only POSIX-looking
+#   values, so it reaches the app unchanged.
+# - Linux: not here. A debug build sets it itself (below).
+# The profile keeps mnemos-ide-sync on its own (signed-out) login in every build.
+# A debug build that is not a release bundle applies the same defaults itself
+# when started without this script (mnemos_ide_core::paths::
+# apply_dev_isolation_defaults, called from app/src/bin/mnemos.rs), so these
+# exports only matter for the release-like Windows case and for the notes.
+if [[ -n "${MNEMOS_DATA_PROFILE:-}" && -z "${MNEMOS_DATA_DIR:-}" ]]; then
+  case "$OS_TYPE" in
+    Darwin)
+      if [[ "$DEBUG_ASSERTIONS" = true ]]; then
+        export MNEMOS_DATA_DIR="$HOME/Library/Application Support/Mnemos-$MNEMOS_DATA_PROFILE"
+      fi
+      ;;
+    MINGW64_NT*|MSYS_NT*)
+      if [[ -n "${APPDATA:-}" ]]; then
+        APPDATA_WIN="$APPDATA"
+        if command -v cygpath >/dev/null 2>&1; then
+          APPDATA_WIN="$(cygpath -w "$APPDATA" 2>/dev/null)" || APPDATA_WIN="$APPDATA"
+        fi
+        export MNEMOS_DATA_DIR="${APPDATA_WIN}\\Mnemos-$MNEMOS_DATA_PROFILE"
+      fi
+      ;;
+  esac
+fi
+
+# The dev app id notes below hold only for Windows (see the Linux note above).
+IS_WINDOWS=false
+case "$OS_TYPE" in
+  MINGW64_NT*|MSYS_NT*) IS_WINDOWS=true ;;
+esac
+
+if [[ -z "${MNEMOS_DATA_PROFILE:-}" ]]; then
+  SPLIT_NOTE=""
+  if [[ "$IS_WINDOWS" = true && -z "${MNEMOS_DATA_DIR:-}" ]]; then
+    SPLIT_NOTE=" Its app data is still separate (dev app id), so on quit it overwrites the installed app's tab and agent-session restore; set MNEMOS_DATA_DIR to avoid that."
+  fi
+  echo "Note: no data profile; this run shares the installed app's config dir, and its login and Mnemos IDE store unless MNEMOS_DATA_DIR is set.${SPLIT_NOTE}"
+elif [[ "$DEBUG_ASSERTIONS" = true ]]; then
+  echo "Note: data profile '$MNEMOS_DATA_PROFILE' (own sync login, config dir and app data; Mnemos IDE store: ${MNEMOS_DATA_DIR:-<data dir>/Mnemos-$MNEMOS_DATA_PROFILE})." \
+    "Opt out: MNEMOS_DATA_PROFILE= ./script/run"
+elif [[ "$OS_TYPE" = "Darwin" ]]; then
+  echo "Note: release-like build; data profile '$MNEMOS_DATA_PROFILE' only gives this run its own sync login." \
+    "It shares the installed app's SQLite state, ~/.mnemos and mnemos.log (Mnemos IDE store: ${MNEMOS_DATA_DIR:-shared with the installed app})."
+elif [[ "$IS_WINDOWS" = true ]]; then
+  echo "Note: release-like build; data profile '$MNEMOS_DATA_PROFILE' gives this run its own sync login, and the unbundled dev app id its own app data and logs." \
+    "It shares ~/.mnemos with the installed app (Mnemos IDE store: ${MNEMOS_DATA_DIR:-shared with the installed app})."
+fi
+
+export FEATURES
+export MNEMOS_BIN_NAME
+export MNEMOS_CHANNEL
+
+if [[ "$OS_TYPE" = "Darwin" ]]; then
+  if [[ ${#MNEMOS_ARGS[@]} -gt 0 ]]; then
+    exec ./script/macos/run "${MAC_ARGS[@]}" -- "${MNEMOS_ARGS[@]}"
+  else
+    exec ./script/macos/run "${MAC_ARGS[@]}"
+  fi
+elif [[ "$OS_TYPE" = "Linux" ]] || [[ "$OS_TYPE" =~ ^(MINGW64_NT|MSYS_NT) ]]; then
+  echo "Running cargo run --bin $MNEMOS_BIN_NAME --features \"$FEATURES\" ${CARGO_PARAMS[*]}"
+  if [[ ${#MNEMOS_ARGS[@]} -gt 0 ]]; then
+    cargo run --bin "$MNEMOS_BIN_NAME" --features "$FEATURES" "${CARGO_PARAMS[@]}" -- "${MNEMOS_ARGS[@]}"
+  else
+    cargo run --bin "$MNEMOS_BIN_NAME" --features "$FEATURES" "${CARGO_PARAMS[@]}"
+  fi
+else
+  echo "No run script defined for the current platform ($OS_TYPE)!" >&2
+  exit 1
+fi

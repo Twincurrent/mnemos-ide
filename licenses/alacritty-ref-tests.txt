@@ -1,0 +1,11 @@
+Alacritty reference-test recordings
+
+The 39 directories under app/src/terminal/ref_tests/data/ (each with an
+alacritty.recording plus grid, size and config JSON; the recording and grid
+are stored gzipped) come from Alacritty's reference tests,
+https://github.com/alacritty/alacritty (alacritty/tests/ref/).
+Copyright (C) the Alacritty contributors. Licensed under the Apache License,
+Version 2.0; its text is in licenses/Apache-2.0.txt.
+
+They are test data only: nothing under ref_tests/data ships in a Mnemos build,
+so they are not listed in THIRD_PARTY_LICENSES.txt.

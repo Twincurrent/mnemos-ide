@@ -1,0 +1,35 @@
+# Intentional mentions for script/check-namespaces: "<path> <regex>" per line.
+
+# Attribution: Warp's copyright and trademark owner.
+LICENSE-AGPL Copyright \(C\) 2020-2026 Denver Technologies, Inc\.
+LICENSE-MIT Copyright \(C\) 2020-2026 Denver Technologies, Inc\.
+NOTICE "Warp" is a trademark of Denver Technologies, Inc\.
+app/assets/resources/mac/CLI-Info.plist Based on Warp, © 2020-2026 Denver Technologies, Inc\.
+app/build.rs based on Warp by Denver Technologies, Inc
+app/Cargo.toml ^copyright = .*based on Warp by Denver Technologies, Inc\."$
+NOTICE ^Denver Technologies, Inc\.$
+README.md published by Denver Technologies, Inc\. under the AGPL
+app/src/settings_view/about_page.rs "Based on Warp, Copyright \(C\) 2020-2026 Denver Technologies, Inc\.",
+licenses/command-corrections-MIT.txt ^Copyright \(C\) 2026 Denver Technologies, Inc\.$
+licenses/command-signatures-MIT.txt ^Copyright \(c\) 2026 Denver Technologies, Inc\. \(Warp\)$
+licenses/warp-workflows-Apache-2.0.txt ^Copyright \(C\) Denver Technologies, Inc\. \(Warp\) and the contributors of the
+
+# The Windows registry key for user preferences. An identifier on the user's machine, not a
+# domain anything is fetched from; renaming it would drop every Windows user's preferences.
+crates/mnemos_ui_extras/src/user_preferences/registry_backed.rs Software\\\\Mnemos\.dev\\\\
+script/windows/windows-installer.iss SOFTWARE\\Mnemos\.dev\\
+PRIVACY.md registry key `HKCU\\Software\\Mnemos\.dev\\Mnemos`
+
+# Comments that name the private repository on purpose, to say the public one is not it.
+Cargo.toml ^# (The public repository, not the private Twincurrent/TCB|Twincurrent/Mnemos\)\. Keep in step with)
+script/source-url ^# (It must be the PUBLIC repository, never the private one|serves as Twincurrent/Mnemos\))
+
+# Warp's domain where it is not fetched. Fallback key material for Linux secret storage: changing
+# the string would make every secret already stored with that key unreadable.
+crates/mnemos_ui_extras/src/secure_storage/fallback_key.rs b"https://releases\.warp\.dev/channel_versions\.json"
+# Upstream endpoints named in the record of what Mnemos changed (not fetched).
+docs/upstream-diff.md ^\| Server endpoints \| `app/build.rs` bakes a stable channel config
+# Packaging comments explaining that Mnemos does not use Warp's package repository.
+resources/linux/rpm/app/mnemos.spec.template ^# repository \(releases\.warp\.dev\) here\.
+script/linux/bundle_deb ^# added Warp's apt repository \(releases\.warp\.dev\)\.
+script/linux/bundle_rpm ^# public key from releases\.warp\.dev\)\.

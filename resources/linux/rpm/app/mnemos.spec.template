@@ -1,0 +1,85 @@
+###############################################################################
+# Package Spec
+###############################################################################
+
+Summary:     Mnemos IDE, a GPU-rendered terminal and IDE for agent-driven development
+Name:        mnemos-terminal@@CHANNEL_SUFFIX@@
+Version:     @@VERSION@@
+Release:     @@RELEASE@@
+Vendor:      TwinCurrent ApS
+Url:         @@SOURCE_URL@@
+Packager:    TwinCurrent ApS <hans@twincurrent.dk>
+License:     AGPL-3.0-only
+
+Requires: 	 xdg-utils, (libvulkan.so.1()(64bit) or libEGL.so.1()(64bit)), (libwayland-egl.so.1()(64bit) if (libwayland-client.so.0()(64bit) and libEGL.so.1()(64bit))), libxcb.so.1()(64bit), libxkbcommon-x11.so.0()(64bit), libX11.so.6()(64bit), libX11-xcb.so.1()(64bit), libXcursor.so.1()(64bit), libXi.so.6()(64bit)
+Recommends:  libgallium_dri.so()(64bit), adwaita-icon-theme
+
+
+# The prefix specifies where the majority of the application files are,
+# allowing the package to be relocatable.
+prefix:      /opt
+
+# We're not including debug info, so don't register the build ID with the
+# machine's registry of build IDs.
+%define _build_id_links none
+
+###############################################################################
+# Description
+###############################################################################
+
+%description
+Mnemos IDE is a fork of the Warp terminal: a GPU-rendered, block-based
+terminal with an IDE layer for multi-project work with coding agents.
+Mnemos is not affiliated with or endorsed by Warp.
+
+###############################################################################
+# Build rule - how does the package get built?
+###############################################################################
+%build
+
+# Nothing to do here - the application should have already been built before we
+# attempt to package it.
+
+###############################################################################
+# Install rule - where should the files live, post-install?
+###############################################################################
+%install
+
+# Populate the buildroot directory with the package contents, in the
+# appropriate locations.
+mkdir -p %{buildroot}
+OPT_DIR="%{prefix}/mnemos/%{name}" @@WORKSPACEROOT@@/script/linux/bundle_install %{buildroot}
+
+# Set up a symlink from the system's bin dir to our installed executable.
+mkdir -p %{buildroot}%{_bindir}
+ln -s %{prefix}/mnemos/%{name}/@@BINARY_NAME@@ %{buildroot}%{_bindir}/%{name}
+
+###############################################################################
+# Files listing - what files will end up in the package?
+###############################################################################
+%files
+
+# Most things go into this directory.
+%{prefix}/mnemos/%{name}
+
+# We also install a few things elsewhere in the system.
+%{_bindir}/%{name}
+%{_datadir}/applications/@@BUNDLEID@@.desktop
+%{_datadir}/icons/hicolor
+
+###############################################################################
+# Post-install rule - what do we need to do on the user's machine to complete
+#                     installation?
+###############################################################################
+%post
+
+# Mnemos IDE: upstream installed Warp's package signing key and added Warp's yum/zypper
+# repository (releases.warp.dev) here. Mnemos publishes no package repository, so the
+# package only installs itself.
+
+# Make sure the system incorporates the newly-installed desktop file.
+if hash update-desktop-database 2>/dev/null; then
+	update-desktop-database
+fi
+
+exit 0

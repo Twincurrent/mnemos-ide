@@ -1,0 +1,11 @@
+# Where this program's Corresponding Source is published (AGPL-3.0 section 6). The About page
+# (app/build.rs) and the NOTICE bundled into every installer (script/prepare_bundled_resources and
+# its .ps1 twin) link to <this URL>/tree/<commit>. The first line that is not a comment is used;
+# MNEMOS_SOURCE_URL overrides it at build time.
+#
+# It must be the PUBLIC repository, never the private one (Twincurrent/TCB, which GitHub now
+# serves as Twincurrent/Mnemos). Its history stays private; the public repo gets a fresh history
+# from script/oss/export-public.sh. script/macos/release and script/windows/release.ps1 refuse to
+# release a commit that this repository does not serve anonymously.
+# Keep in step with repository/homepage in [workspace.package] of Cargo.toml.
+https://github.com/Twincurrent/mnemos-ide

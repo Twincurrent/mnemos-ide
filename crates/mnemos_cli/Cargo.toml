@@ -1,0 +1,36 @@
+[package]
+name = "mnemos_cli"
+edition = "2024"
+description = "CLI argument parsing for Mnemos"
+authors.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+cfg-if = { workspace = true }
+humantime.workspace = true
+jaq-all.workspace = true
+url = { workspace = true, features = ["serde"] }
+uuid = { workspace = true }
+mnemos_core = { path = "../mnemos_core" }
+color-print = "0.3"
+mnemos_util = { path = "../mnemos_util" }
+clap_complete = "4.5.58"
+anyhow.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation"
+] }
+
+[build-dependencies]
+cfg_aliases.workspace = true
+
+[features]
+integration_tests = []
+api_key_authentication = []
+
+[dev-dependencies]
+serial_test = "0.8.0"

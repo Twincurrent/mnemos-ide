@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+#
+# Install and enable the Claude Code plugin that feeds the Mnemos agents panel:
+# mnemos-agents from the `mnemos` marketplace in this checkout (ide/claude-plugin).
+# Idempotent: safe to run on a machine that already has it.
+#
+#   ./script/install-claude-plugin
+#
+# What it does, and why each step exists:
+#   1. Registers ide/claude-plugin of this checkout as the `mnemos` marketplace
+#      and runs `claude plugin install mnemos-agents@mnemos`: the hooks that
+#      emit session events (prompt, response, tool, permission state). Without
+#      a checkout, the app's "Install plugin" action adds the same marketplace
+#      from the public source repository instead.
+#   2. Adds the plugin to `enabledPlugins` in ~/.claude/settings.json. An
+#      installed plugin whose key is missing there never loads, and the app
+#      cannot tell: it reads installed_plugins.json only, so the panel just
+#      stays at "No CLI agents running" (bitten 2026-08-19).
+#
+# Upstream Warp's plugin (warp@claude-code-warp) is no longer installed. Mnemos
+# still recognises an existing install of it and re-applies its file-ingest
+# patch at app start.
+#
+# Needs: claude and jq (the plugin needs jq at runtime anyway). Run it from a
+# terminal, then start a fresh `claude` inside Mnemos; hooks are loaded at
+# session start.
+
+set -euo pipefail
+
+PLUGIN_KEY='mnemos-agents@mnemos'
+MARKETPLACE_NAME='mnemos'
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MARKETPLACE_DIR="$REPO_ROOT/ide/claude-plugin"
+CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
+SETTINGS="$CLAUDE_HOME/settings.json"
+
+for tool in claude jq; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool not on PATH" >&2; exit 1; }
+done
+
+echo "== 1/2 plugin install"
+# `marketplace add` fails if the marketplace is already registered; that's fine.
+# If it is registered at a path that no longer exists, re-point it (see AGENTS.md).
+claude plugin marketplace add "$MARKETPLACE_DIR" >/dev/null 2>&1 || true
+claude plugin marketplace update "$MARKETPLACE_NAME" >/dev/null 2>&1 || {
+    echo "   re-pointing the $MARKETPLACE_NAME marketplace at $MARKETPLACE_DIR"
+    claude plugin marketplace remove "$MARKETPLACE_NAME" >/dev/null 2>&1 || true
+    claude plugin marketplace add "$MARKETPLACE_DIR"
+}
+claude plugin install "$PLUGIN_KEY"
+
+echo "== 2/2 enable in $SETTINGS"
+if [ ! -f "$SETTINGS" ]; then
+    echo '{}' > "$SETTINGS"
+fi
+if [ "$(jq -r --arg k "$PLUGIN_KEY" '.enabledPlugins[$k] // false' "$SETTINGS")" = "true" ]; then
+    echo "   already enabled: $PLUGIN_KEY"
+else
+    # Write to a sibling temp file and move it into place so a failed jq run
+    # can never leave settings.json half-written (an unparsable settings.json
+    # makes Claude Code skip the WHOLE file, hooks and permissions included).
+    tmp="$SETTINGS.tmp.$$"
+    jq --arg k "$PLUGIN_KEY" '.enabledPlugins[$k] = true' "$SETTINGS" > "$tmp"
+    mv "$tmp" "$SETTINGS"
+    echo "   enabled: $PLUGIN_KEY"
+fi
+
+echo
+echo "Done. Verify the settings file still parses:"
+echo '    claude --print --output-format text "reply with exactly: ok"'
+echo "Then start a new \`claude\` inside Mnemos; the agents panel should list it."

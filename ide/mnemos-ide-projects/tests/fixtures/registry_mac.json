@@ -1,0 +1,307 @@
+{
+  "projects": [
+    {
+      "id": "3f83538b-9bd1-4cbb-a9b5-e41fae754c35",
+      "name": "Admin",
+      "path": "/Users/alice/code/Admin",
+      "createdAt": "2026-01-16T10:30:27.544Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "acme/Admin",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "linearSync": false,
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-02-16T13:52:04.553Z"
+    },
+    {
+      "id": "21bbe269-fe74-43ad-a09f-d0176861e93e",
+      "name": "gadget",
+      "path": "/Users/alice/code/gadget",
+      "createdAt": "2026-01-16T10:33:56.985Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "acme/gadget",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "linearSync": false,
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-01-16T10:37:44.366Z"
+    },
+    {
+      "id": "ed5f6c66-2bf0-459d-a2eb-032292ebedb5",
+      "name": "TwinCurrent-Build",
+      "path": "/Users/alice/code/Admin/.claude/apps/TwinCurrent-Build",
+      "createdAt": "2026-01-21T22:51:37.631Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "bob/TCB",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "linearSync": false,
+        "mainBranch": "main",
+        "memoryBackend": "graphiti",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-01-26T11:30:04.876Z"
+    },
+    {
+      "id": "566a0580-ae4b-4c5b-ab14-4fc4ea28ab89",
+      "name": "globex",
+      "path": "/Users/alice/Development/globex/globex",
+      "createdAt": "2026-01-26T08:13:01.656Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "_git/globex",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "linearSync": false,
+        "mainBranch": "master",
+        "memoryBackend": "graphiti",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-03-18T08:37:35.869Z"
+    },
+    {
+      "id": "93583acb-933f-40da-a5f6-343b5c3940d5",
+      "name": "Ledger_App",
+      "path": "/Users/alice/code/Ledger_App",
+      "createdAt": "2026-02-02T15:54:22.968Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "acme/Ledger_App",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "linearSync": false,
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-03-17T15:47:51.898Z"
+    },
+    {
+      "id": "da72feae-5e88-4bd4-ab33-352c0e565af9",
+      "name": "Portfolio",
+      "path": "/Users/alice/code/Portfolio",
+      "createdAt": "2026-02-06T14:46:27.186Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "acme/Portfolio",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "linearSync": false,
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-03-27T19:59:00.132Z"
+    },
+    {
+      "id": "5fd5f0b2-1e32-4e21-a9ca-838689b0b28b",
+      "name": "globex-frontend-web",
+      "path": "/Users/alice/Development/globex/globex-frontend-web",
+      "createdAt": "2026-02-26T08:56:43.158Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "globex/globex-frontend-web",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-04-21T11:15:27.362Z"
+    },
+    {
+      "id": "34256c95-0861-4219-a419-e0e4e8d79fde",
+      "name": "chromeextension",
+      "path": "/Users/alice/Development/globex/chromeextension",
+      "createdAt": "2026-03-09T09:04:46.055Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "globex/chromeextension",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-03-30T11:26:48.154Z"
+    },
+    {
+      "id": "421a6cc0-b692-4bc7-a025-5db75632275c",
+      "name": "TCB",
+      "path": "/Users/alice/code/TCB",
+      "createdAt": "2026-03-17T23:59:30.315Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "bob/TCB",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-03-17T23:59:36.200Z"
+    },
+    {
+      "id": "cd6e30ca-e321-4832-a266-e4c1a5976999",
+      "name": "Doohickey",
+      "path": "/Users/alice/code/Doohickey",
+      "createdAt": "2026-04-14T08:22:33.088Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "acme/Doohickey",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "mainBranch": "master",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-04-14T08:22:33.216Z"
+    },
+    {
+      "id": "dad24f08-73c2-4210-ab52-47a11a42435c",
+      "name": "acme-website",
+      "path": "/Users/alice/code/acme-website",
+      "createdAt": "2026-04-23T12:09:47.443Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "bob/acme-website",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-04-23T12:53:13.444Z"
+    },
+    {
+      "id": "3092ffc6-28d9-4af6-a2a3-04e7a379d9e4",
+      "name": "tcbv2",
+      "path": "/Users/alice/code/tcbv2",
+      "createdAt": "2026-04-30T09:39:17.164Z",
+      "lastOpenedAt": null,
+      "autoBuildPath": ".twincurrent-build",
+      "gitRepo": "acme/TCB",
+      "settings": {
+        "graphitiMcpEnabled": true,
+        "graphitiMcpUrl": "http://localhost:8000/mcp/",
+        "mainBranch": "main",
+        "memoryBackend": "file",
+        "model": "opus",
+        "notifications": {
+          "onReviewNeeded": true,
+          "onTaskComplete": true,
+          "onTaskFailed": true,
+          "sound": false
+        },
+        "useClaudeMd": true
+      },
+      "updatedAt": "2026-04-30T09:39:21.074Z"
+    },
+    {
+      "id": "project-1788169499352",
+      "name": "gizmo",
+      "path": "/Users/alice/code/gizmo",
+      "createdAt": "2026-08-31T09:44:59.352351Z",
+      "lastOpenedAt": "2026-08-31T09:44:59.352351Z"
+    }
+  ],
+  "machineId": "MACHINE-0000AAAA-darwin-_Users_alice",
+  "settings": {}
+}

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# Installs all cargo-managed dependencies required to build Mnemos.
+
+# This script should be platform-agnostic (eg. no unix-only references like /dev/null).
+
+"$PWD"/script/install_cargo_binstall
+
+# Use cargo-binstall to install the Diesel CLI.
+#
+# This is only needed for local development, so we skip it when running on GitHub
+# (either for CI or building a release).
+if [ "${GITHUB_ACTIONS}" != "true" ]; then
+    cargo binstall --force -y diesel_cli
+fi
+
+if [ "$(uname -s)" = "Darwin" ]; then
+    "$PWD"/script/macos/install_build_deps
+fi

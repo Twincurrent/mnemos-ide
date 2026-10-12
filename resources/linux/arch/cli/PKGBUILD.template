@@ -1,0 +1,29 @@
+pkgname=mnemos-cli@@CHANNEL_SUFFIX@@
+pkgver=@@VERSION@@
+pkgrel=@@RELEASE@@
+pkgdesc="Command-line companion for Mnemos IDE"
+arch=('@@ARCH@@')
+url="@@SOURCE_URL@@"
+license=('AGPL-3.0-only')
+depends=(
+	'curl'
+	'zlib'
+)
+optdepends=(
+	'org.freedesktop.secrets: for securely storing passwords'
+)
+# Don't perform additional stripping of binaries; we already do the amount of
+# stripping we want as part of the bundle_install script.
+options=('!strip')
+source=(
+	'data.tar'
+)
+
+package() {
+	# Unpack the base package into the output directory.
+	bsdtar -xf data.tar -C "$pkgdir/"
+
+	# Create a symlink to the binary in /usr/bin.
+	install -d "$pkgdir"/usr/bin
+	ln -s "/opt/mnemos/mnemos-cli@@CHANNEL_SUFFIX@@/@@BINARY_NAME@@" "$pkgdir/usr/bin/@@BINARY_NAME@@"
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mnemos · Peaks · Mono
+  Single-colour silhouette only — no sun, no gradients. For tab-bar
+  icons, single-colour stamps, and any place a flat mark is needed.
+  Inherits currentColor so it can be tinted by CSS / app theming.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Three peaks as a single silhouette polygon (flat) -->
+  <polygon
+    points="130,820 280,460 410,706 512,200 614,706 744,460 894,820"
+    fill="currentColor"/>
+  <!-- Implicit baseline closing the shape -->
+</svg>

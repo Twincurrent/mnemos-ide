@@ -1,0 +1,1 @@
+echo -e '\n# Auto-Mnemosify\nstatus --is-interactive; and printf '\''\eP$f{"hook": "SourcedRcFileForMnemos", "value": { "shell": "%", "uname": "'$(uname)'"% }}\x9c'\'' ' >> %

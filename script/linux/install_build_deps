@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+#
+# Install all dependencies required to build Mnemos on Linux.
+
+set -e
+
+# Define some control sequences for text formatting.
+red="\033[0;31m"
+reset="\033[0m"
+
+# Install some development libraries that will be needed in the compilation
+# process.
+UNAME="$(uname -a)"
+if [[ "$(source /etc/os-release; echo $ID $ID_LIKE)" = *"debian"* ]]; then
+  echo "⬇️  Installing build-time dependencies..."
+  # Define the packages to install as a bash array so we can include
+  # comments between lines.
+  PACKAGES=(
+    curl
+    git
+    # The *.pdb files are LFS objects (.gitattributes).
+    git-lfs
+    # Install various core packages for development work on Linux.
+    build-essential cmake pkg-config
+    # Make it so that running `python` runs `python3`.
+    python-is-python3
+    # Development headers for various libraries, needed when compiling
+    # certain Rust crate dependencies.
+    libssl-dev libfreetype-dev libexpat1-dev libgit2-dev
+    # libs needed for loading system fonts
+    libfontconfig1-dev
+    # Needed in wasm compilation for parsing the version of wasm-bindgen
+    jq
+    # Needed for compressing web bundles
+    brotli
+    # Needed for voice input
+    libasound2-dev
+  )
+  sudo apt-get install -y "${PACKAGES[@]}"
+
+  # Install a modern version of protoc. The apt 'protobuf-compiler' package on
+  # Ubuntu 20.04 ships protoc 3.6.1, which is too old for proto3 'optional'
+  # fields (requires protoc >= 3.15).
+  PROTOC_VERSION="25.1"
+  case "$(uname -m)" in
+    x86_64)  PROTOC_ZIP="protoc-${PROTOC_VERSION}-linux-x86_64.zip" ;;
+    aarch64) PROTOC_ZIP="protoc-${PROTOC_VERSION}-linux-aarch_64.zip" ;;
+    *)       echo "Unsupported architecture for protoc: $(uname -m)"; exit 1 ;;
+  esac
+  curl -fsSL -o /tmp/protoc.zip \
+    "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}"
+  sudo unzip -o /tmp/protoc.zip -d /usr/local bin/protoc 'include/*'
+  rm /tmp/protoc.zip
+elif [[ "$(source /etc/os-release; echo $ID $ID_LIKE)" = *"fedora"* ]]; then
+  # Mnemos IDE: Fedora and its derivatives. Linux is not a published target; untested in CI.
+  echo "Installing build-time dependencies (dnf)..."
+  PACKAGES=(
+    curl git git-lfs unzip
+    gcc gcc-c++ make cmake pkgconf-pkg-config
+    openssl-devel freetype-devel expat-devel libgit2-devel
+    fontconfig-devel
+    jq brotli
+    alsa-lib-devel
+    # protoc for crates/remote_server (Fedora ships a recent one).
+    protobuf-compiler protobuf-devel
+  )
+  sudo dnf install -y "${PACKAGES[@]}"
+elif [[ "$(source /etc/os-release; echo $ID $ID_LIKE)" = *"arch"* ]]; then
+  # Mnemos IDE: Arch and its derivatives. Linux is not a published target; untested in CI.
+  echo "Installing build-time dependencies (pacman)..."
+  PACKAGES=(
+    curl git git-lfs unzip
+    base-devel cmake pkgconf
+    openssl freetype2 expat libgit2
+    fontconfig
+    jq brotli
+    alsa-lib
+    # protoc for crates/remote_server.
+    protobuf
+  )
+  sudo pacman -S --needed --noconfirm "${PACKAGES[@]}"
+else
+  echo -e "⚠️  ${red}Unknown Linux distribution; necessary build dependencies may not be installed!${reset}"
+fi
+
+# Turn on git-lfs for this user (the *.pdb files are LFS objects).
+if command -v git-lfs >/dev/null 2>&1; then
+  git lfs install
+fi
+
+# Install Rust.
+"$PWD"/script/install_rust
+
+# Install various build-time dependencies through cargo.
+"$PWD"/script/install_cargo_build_deps

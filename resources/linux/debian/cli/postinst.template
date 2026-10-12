@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Create a symlink from /usr/bin to our binary under /opt, but never take over a
+# command that belongs to another program: only (re)create the link when it is
+# missing, dangling, or already points into our own install directory.
+link=/usr/bin/@@BINARY_NAME@@
+if [ -L "$link" ]; then
+	target="$(readlink "$link")"
+	case "$target" in
+		/opt/mnemos/*) ;;
+		*)
+			if [ -e "$link" ]; then
+				echo "mnemos-cli: not replacing $link: it points at $target" >&2
+				exit 0
+			fi
+			;;
+	esac
+elif [ -e "$link" ]; then
+	echo "mnemos-cli: not replacing $link: it is not a link this package created" >&2
+	exit 0
+fi
+rm -f "$link"
+ln -s @@OPTDIR@@/@@BINARY_NAME@@ "$link"

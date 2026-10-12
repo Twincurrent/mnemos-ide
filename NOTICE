@@ -1,0 +1,184 @@
+Mnemos IDE
+Copyright (C) 2026 TwinCurrent ApS
+
+Mnemos IDE (shipped as the Mnemos app) is a modified version of the Warp
+terminal client (https://github.com/warpdotdev/warp), Copyright (C) 2020-2026
+Denver Technologies, Inc.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, version 3 of the License only. It is distributed in the
+hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+LICENSE-AGPL for the full terms.
+
+
+Modified version (AGPL-3.0 section 5(a))
+----------------------------------------
+
+Mnemos IDE is based on Warp's public repository at commit
+d0f045c01bacbd845a631d07da30f277cfd2b98d ("Auto oss vs cost efficient 50/50
+A/B test (#9355)", 2026-04-28). TwinCurrent ApS has modified it since 2026-04-29. Every change
+relative to Warp is visible with
+
+  git diff d0f045c01bacbd845a631d07da30f277cfd2b98d HEAD
+
+after fetching Warp's history into a clone (git fetch
+https://github.com/warpdotdev/warp.git d0f045c01bacbd845a631d07da30f277cfd2b98d). Every
+file that differs from that commit has been modified by TwinCurrent ApS. Mnemos IDE is published
+as a product of its own, with its own history: development before publication happened in a
+private repository whose history is not published, so the public history starts with one
+commit holding the whole program and shows each later change on its own. Inside files that came from Warp, our edits carry a
+"Mnemos IDE:" comment (older ones "TCB:"). The main changes:
+
+- the application, its binary, bundle id and channels renamed from Warp to
+  Mnemos;
+- the crates under ide/ (named tcb/ before 2026-10-08) and ide/claude-plugin
+  added: projects across machines, settings and Claude Code session sync, the
+  agents and sessions panels, session restore across restarts and the git
+  tree panel;
+- upstream server and cloud features disconnected or pointed at Mnemos's own
+  server;
+- changes throughout the rest of the code base.
+
+
+Licensing
+---------
+
+- The UI framework crates crates/mnemos_ui_core and crates/mnemos_ui (upstream
+  warpui_core and warpui) are licensed under the MIT license, see LICENSE-MIT.
+  That grant covers the code of those two crates. As published here they
+  depend on AGPL-licensed crates of this repository (among them
+  markdown_parser, sum_tree, command, mnemos_util, settings_value and
+  string-offset), so a program built from them as they are here is covered by
+  the AGPL as a whole.
+- Everything else in this repository, including the ide/ crates, is licensed
+  under the GNU Affero General Public License, version 3 only, see
+  LICENSE-AGPL.
+- ide/claude-plugin is TwinCurrent ApS's own code and is also offered under
+  the MIT license, as its plugin.json states; the text is in
+  ide/claude-plugin/plugins/mnemos-agents/LICENSE.
+- Third-party components keep their own licenses. Every Mnemos installer
+  includes THIRD_PARTY_LICENSES.txt, generated from Cargo.lock by cargo-about
+  (about.toml, about.hbs) plus the non-Cargo components listed in
+  script/prepare_bundled_resources, with their texts under licenses/.
+- Mnemos bundles no Anthropic material at all: no Claude Code binary, no
+  Agent SDK and no skill files. Claude Code is installed and run by the user.
+- The Windows installer also carries Microsoft binaries that are not covered
+  by the AGPL: the Visual C++ runtime (vcruntime140.dll, vcruntime140_1.dll,
+  msvcp140.dll) and the DirectX Shader Compiler's validator dxil.dll, each
+  under Microsoft's terms (licenses/microsoft-vc-runtime.txt and
+  licenses/microsoft-dxil-LICENSE-MS.txt). The Visual C++ runtime is the
+  runtime library of the compiler Mnemos is built with, so it is a System
+  Library in the sense of AGPL-3.0 section 1 and not part of the
+  Corresponding Source. dxil.dll is not linked into Mnemos: Microsoft's
+  dxcompiler.dll loads it at run time, and it is distributed alongside
+  Mnemos as a separate work.
+
+
+Licensing history
+-----------------
+
+In the private pre-publication history, two commits of 2026-05-05 ("chore:
+drop MIT license and rewrite README for private TCB" and "chore: drop dead
+license/audit configs and AGPL") deleted LICENSE-MIT and LICENSE-AGPL and
+described this code base as private and MIT-only, and builds distributed between May and October 2026
+shipped without the license texts. Those commits had no legal effect. A
+licensee cannot relicense Warp's code: this code base was, is, and every build
+of it was distributed under the licenses above (AGPL-3.0-only, MIT for the two
+UI crates). The license files were restored on 2026-10-08, before the code was
+published.
+
+
+Corresponding Source (AGPL-3.0 section 6)
+-----------------------------------------
+
+The Corresponding Source of a Mnemos release is the git commit it was built
+from, published at the repository named in script/source-url, plus the
+source archive published next to its installers (that commit's tree and the
+vendored source of every Rust dependency). The About page of the app and the
+copy of this NOTICE inside each installer name that commit and link to it.
+The release scripts refuse to build from a tree with uncommitted or untracked
+changes, or from a commit that is not on that public repository, so a release
+is exactly its commit.
+
+Some Rust dependencies are forks fetched from git repositories that Warp
+hosts (the `git = "https://github.com/warpdotdev/..."` entries in the
+Cargo.toml files), and a few of them follow a branch. Cargo.lock pins the
+exact revision of each, and the release source archive contains it. For those
+dependencies the source archive, not the git repository, is the canonical
+source of a release.
+
+
+Third-party theme palettes
+--------------------------
+
+The community themes in crates/mnemos_core/src/ui/theme/mnemos_themes.rs take
+their colour values from these projects' published palettes and terminal
+ports. Mnemos uses the colours only; no code or theme file of these projects
+is included. Credit and licenses:
+
+- Catppuccin Latte and Mocha: catppuccin/catppuccin and catppuccin/kitty,
+  Copyright (c) 2021 Catppuccin, MIT.
+- Dracula: the Dracula specification (draculatheme.com/spec) and
+  dracula/dracula-theme, Copyright (c) 2023 Dracula Theme, MIT.
+- Gruvbox Dark and Light: morhetz/gruvbox by Pavel Pertsev, MIT/X11 (stated
+  in its README and package.json; the repository has no license file).
+- Kanagawa: rebelot/kanagawa.nvim, Copyright (c) 2021 Tommaso Laurenzi, MIT.
+- Nord: nordtheme/nord and nordtheme/alacritty, Copyright (c) 2016-present
+  Sven Greb, MIT.
+- One Dark: atom/one-dark-syntax, Copyright (c) 2016 GitHub Inc., MIT, with
+  the terminal mapping of joshdick/onedark.vim, Copyright (c) 2015 Joshua
+  Dick, MIT.
+- Rose Pine: rose-pine/rose-pine-theme and rose-pine/kitty, Copyright (c)
+  2023 Rose Pine, MIT.
+- Solarized Dark and Light: altercation/solarized, Copyright (c) 2011 Ethan
+  Schoonover, MIT.
+- Tokyo Night: tokyo-night/tokyo-night-vscode-theme, Copyright (c)
+  2018-present Enkia, MIT. The night variant's terminal colours come from
+  folke/tokyonight.nvim by Folke Lemaitre, whose repository is licensed under
+  the Apache License 2.0 (its terminal theme files say MIT in their headers).
+
+"Catppuccin", "Dracula", "Nord", "Rose Pine", "Solarized", "Tokyo Night" and
+the other theme names are used only to identify the palettes; their projects
+do not endorse Mnemos.
+
+
+Theme background images
+-----------------------
+
+The image themes (crates/mnemos_core/src/ui/theme/mnemos_themes.rs) draw
+background images bundled from app/assets/bundled/jpg/themes/. The same
+credits are in ATTRIBUTION.md next to the images.
+
+- Slate (slate.jpg): "North Crater Flow sunset" (Sunset over the Pioneer
+  Mountains and the North Crater Flow, Craters of the Moon National Monument
+  and Preserve, Idaho), by NPS / Jacob W. Frank. Public domain, US federal
+  work (NPS).
+  https://commons.wikimedia.org/wiki/File:North_Crater_Flow_sunset_(36900263842).jpg
+- Mountain Night (mountain_night.jpg): "Night Sky" (Grand Teton National
+  Park), NPS Photo / Bill Bjornstad. Public domain, US federal work (NPS).
+  https://commons.wikimedia.org/wiki/File:Night_Sky_(55545879347).jpg
+- Mountain Dawn (mountain_dawn.jpg): "Sunrise alpenglow on Denali", NPS
+  Photo / Tim Rains. Public domain, US federal work (NPS).
+  https://commons.wikimedia.org/wiki/File:Sunrise_alpenglow_on_Denali_(2d132bc3-1dd8-b71c-070a-c85787da1af2).jpg
+- Fjord (fjord.jpg): "Geiranger fjord, vertical cliffs-2", by Szilas
+  (Wikimedia Commons user). Public domain, released by the author (PD-self).
+  https://commons.wikimedia.org/wiki/File:Geiranger_fjord,_vertical_cliffs-2.jpg
+
+Each photo was cropped and tone-mapped for Mnemos (resized, regraded and
+masked so the text area stays calm). The National Park Service and the
+photographers do not endorse Mnemos.
+
+- Stone (stone.jpg): original work generated procedurally for Mnemos IDE (a
+  noise-based sandstone texture with layered ridges, no third-party image),
+  Copyright (C) 2026 TwinCurrent ApS, under the same license as the rest of
+  Mnemos IDE (AGPL-3.0-only). Its source is script/generate_stone_image.py,
+  which regenerates it.
+
+
+Trademarks
+----------
+
+"Warp" is a trademark of Denver Technologies, Inc. Mnemos is not affiliated
+with or endorsed by Warp. "Claude" is a trademark of Anthropic PBC.

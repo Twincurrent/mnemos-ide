@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mnemos · Peaks · Light variant
+  Same construction on a warm parchment ground; sun rendered as a copper
+  disc rather than a glow. For light-mode UI surfaces.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="lk-cu-lit" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#fde68a"/><stop offset="40%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#7c2d12"/>
+    </linearGradient>
+    <linearGradient id="lk-cu-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c2d12"/><stop offset="100%" stop-color="#451a03"/>
+    </linearGradient>
+    <linearGradient id="lk-st-lit" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#e7e5e4"/><stop offset="100%" stop-color="#78716c"/>
+    </linearGradient>
+    <linearGradient id="lk-st-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#57534e"/><stop offset="100%" stop-color="#292524"/>
+    </linearGradient>
+    <linearGradient id="lk-sky" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#fafaf9"/><stop offset="100%" stop-color="#e7e5e4"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="180" fill="url(#lk-sky)"/>
+  <circle cx="800" cy="280" r="48" fill="#fbbf24"/>
+  <polygon points="280,460 130,820 420,820" fill="url(#lk-st-lit)"/>
+  <polygon points="280,460 130,820 280,820" fill="url(#lk-st-shadow)" opacity="0.92"/>
+  <polygon points="744,460 894,820 604,820" fill="url(#lk-st-lit)"/>
+  <polygon points="744,460 604,820 744,820" fill="url(#lk-st-shadow)" opacity="0.92"/>
+  <polygon points="512,200 322,820 702,820" fill="url(#lk-cu-lit)"/>
+  <polygon points="512,200 322,820 512,820" fill="url(#lk-cu-shadow)" opacity="0.95"/>
+  <line x1="120" y1="820" x2="904" y2="820" stroke="#1c1917" stroke-width="2" opacity="0.18"/>
+</svg>

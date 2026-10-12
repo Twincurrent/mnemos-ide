@@ -1,0 +1,28 @@
+# Mnemos IDE: cargo-fuzz targets. Its own workspace, so a normal build of the
+# repo never compiles libFuzzer.
+#
+#   cargo install cargo-fuzz
+#   cargo +nightly fuzz run ansi_processor
+[package]
+name = "mnemos-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mnemos = { path = "../app" }
+
+[[bin]]
+name = "ansi_processor"
+path = "fuzz_targets/ansi_processor.rs"
+test = false
+doc = false
+bench = false

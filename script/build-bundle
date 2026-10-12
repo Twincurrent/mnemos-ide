@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+#
+# build-bundle — universal Mnemos production-bundle entry point.
+#
+# Detects the host OS and dispatches to the platform-specific bundle script
+# (script/macos/bundle, script/windows/bundle.ps1, script/linux/bundle).
+# Defaults are tuned for **production stable** builds:
+#
+#   - channel:   stable      (release-lto profile, NO debug_assertions)
+#   - signing:   on          (selfsign on macOS by default; signed on Windows
+#                             when SIGN_TOOL_CMD is provided)
+#   - notarize:  off         (Apple notarization secrets not provisioned)
+#   - arch:      universal   (macOS arm64+x86_64 fat binary; Windows host arch;
+#                             Linux host arch)
+#
+# ─── Examples ─────────────────────────────────────────────────────────────────
+#
+#   ./script/build-bundle                         # prod stable, signed, universal
+#   ./script/build-bundle --channel dev           # dev build (opt-in)
+#   ./script/build-bundle --notarize              # prod with Apple notarization
+#                                                  # (requires MNEMOS_NOTARIZATION_*
+#                                                  #  + MNEMOS_DEVELOPER_ID_* env vars)
+#   ./script/build-bundle --no-sign               # unsigned build
+#   ./script/build-bundle --arch arm64            # macOS arm64-only (faster)
+#   ./script/build-bundle --arch x86_64           # macOS Intel-only
+#   ./script/build-bundle --help                  # full usage
+#
+# ─── Flags ───────────────────────────────────────────────────────────────────
+#
+#   -c, --channel <stable|preview|dev|local>
+#                                Default: stable.
+#   --sign / --no-sign           Code-sign the artifact. Default: on for stable, off for dev/local.
+#   --notarize                   macOS only. Submits to Apple notarization service.
+#                                Requires the GCP-provisioned secrets OR the
+#                                MNEMOS_*_PASSWORD env vars (see script/macos/bundle).
+#                                Default: off.
+#   --arch <arm64|x86_64|universal>
+#                                Default: universal on macOS, host on Windows/Linux.
+#                                'universal' is macOS-only; on other platforms it
+#                                falls back to host arch.
+#   -o, --open                   Open the artifact directory after bundling (macOS only).
+#   --release-tag <tag>          Embed a specific git tag in the build.
+#   --help, -h                   Print this help and exit.
+#
+# ─── Behaviour ───────────────────────────────────────────────────────────────
+#
+# Fails fast with a clear error if:
+#   * cargo / rustc are not on PATH
+#   * macOS: codesign is missing when --sign is requested
+#   * macOS: --notarize requested but Apple secrets unset
+#   * Windows: signtool not on PATH when --sign is requested
+#
+# Idempotent: re-running on a clean checkout produces the same artifact path.
+#
+# Output paths:
+#   macOS:   target/release-lto/bundle/osx/Mnemos.dmg            (channel=stable)
+#            target/release-lto-debug_assertions/bundle/osx/MnemosDev.dmg (channel=dev)
+#   Windows: script/windows/Output/MnemosSetup.exe (or arm64 variant)
+#   Linux:   target/release-lto/bundle/linux/<package>/...
+
+set -euo pipefail
+
+# Resolve repo root so the script works regardless of CWD.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Defaults.
+CHANNEL="stable"
+ARCH=""
+SIGN=""
+NOTARIZE=false
+OPEN_AFTER=false
+RELEASE_TAG=""
+
+usage() {
+  sed -n '2,55p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+die() {
+  echo "build-bundle: $*" >&2
+  exit 1
+}
+
+# ─── Argument parsing ────────────────────────────────────────────────────────
+while (( "$#" )); do
+  case "$1" in
+    -h|--help)
+      usage 0
+      ;;
+    -c|--channel)
+      [[ -n "${2-}" ]] || die "missing value for $1"
+      CHANNEL="$2"
+      shift 2
+      ;;
+    --sign)
+      SIGN=true
+      shift
+      ;;
+    --no-sign|--nosign)
+      SIGN=false
+      shift
+      ;;
+    --notarize)
+      NOTARIZE=true
+      shift
+      ;;
+    --arch)
+      [[ -n "${2-}" ]] || die "missing value for $1"
+      ARCH="$2"
+      shift 2
+      ;;
+    -o|--open)
+      OPEN_AFTER=true
+      shift
+      ;;
+    --release-tag)
+      [[ -n "${2-}" ]] || die "missing value for $1"
+      RELEASE_TAG="$2"
+      shift 2
+      ;;
+    *)
+      die "unknown flag: $1 (run --help for usage)"
+      ;;
+  esac
+done
+
+# Default --sign based on channel.
+if [[ -z "$SIGN" ]]; then
+  case "$CHANNEL" in
+    stable|preview) SIGN=true ;;
+    dev|local|*)        SIGN=false ;;
+  esac
+fi
+
+# ─── Toolchain checks ────────────────────────────────────────────────────────
+command -v cargo  >/dev/null 2>&1 || die "cargo not found on PATH (install via https://rustup.rs)"
+command -v rustc  >/dev/null 2>&1 || die "rustc not found on PATH (install via https://rustup.rs)"
+
+# ─── OS detection + dispatch ─────────────────────────────────────────────────
+OS_TYPE="$(uname -s)"
+cd "$REPO_ROOT"
+
+case "$OS_TYPE" in
+  Darwin)
+    # macOS dispatch.
+    command -v codesign >/dev/null 2>&1 || [[ "$SIGN" = false ]] \
+      || die "codesign not found (Xcode command-line tools required for --sign)"
+    command -v create-dmg >/dev/null 2>&1 \
+      || die "create-dmg not found (install via 'brew install create-dmg')"
+
+    MAC_ARGS=()
+    MAC_ARGS+=("-c" "$CHANNEL")
+
+    # Arch handling. macOS default is universal; explicit override switches mode.
+    case "${ARCH:-universal}" in
+      universal) ;; # default — leave alone
+      arm64)     MAC_ARGS+=("--arch" "aarch64") ;;
+      x86_64)    MAC_ARGS+=("--arch" "x86_64") ;;
+      *)         die "invalid --arch '$ARCH' (use arm64, x86_64, or universal)" ;;
+    esac
+
+    # Signing & notarization.
+    if [[ "$NOTARIZE" = true ]]; then
+      [[ -n "${MNEMOS_NOTARIZATION_PASSWORD:-}" ]]      || die "MNEMOS_NOTARIZATION_PASSWORD must be set for --notarize"
+      [[ -n "${MNEMOS_DEVELOPER_ID_CERT_PASSWORD:-}" ]] || die "MNEMOS_DEVELOPER_ID_CERT_PASSWORD must be set for --notarize"
+      [[ -n "${MNEMOS_CODESIGN_KEYCHAIN_PASSWORD:-}" ]] || die "MNEMOS_CODESIGN_KEYCHAIN_PASSWORD must be set for --notarize"
+      [[ -n "${MNEMOS_DEVELOPER_ID_CERT:-}" ]]          || die "MNEMOS_DEVELOPER_ID_CERT must be set for --notarize"
+      [[ -n "${MNEMOS_NOTARIZATION_APPLE_ID:-}" ]]      || die "MNEMOS_NOTARIZATION_APPLE_ID must be set for --notarize"
+      MAC_ARGS+=("--read-passwords-from-env")
+    elif [[ "$SIGN" = true ]]; then
+      MAC_ARGS+=("--selfsign")
+    else
+      MAC_ARGS+=("--nosign")
+    fi
+
+    [[ "$OPEN_AFTER" = true ]] && MAC_ARGS+=("--open")
+    [[ -n "$RELEASE_TAG" ]]    && MAC_ARGS+=("--release-tag" "$RELEASE_TAG")
+
+    echo "build-bundle: dispatching to script/macos/bundle ${MAC_ARGS[*]}"
+    exec "./script/macos/bundle" "${MAC_ARGS[@]}"
+    ;;
+
+  Linux)
+    LIN_ARGS=()
+    LIN_ARGS+=("-c" "$CHANNEL")
+    [[ -n "$RELEASE_TAG" ]] && LIN_ARGS+=("--release-tag" "$RELEASE_TAG")
+
+    case "${ARCH:-}" in
+      ""|universal) ;; # let the linux script use BUILD_ARCH default (uname -m)
+      arm64)        LIN_ARGS+=("--arch" "aarch64") ;;
+      x86_64)       LIN_ARGS+=("--arch" "x86_64") ;;
+      aarch64)      LIN_ARGS+=("--arch" "aarch64") ;;
+      *)            die "invalid --arch '$ARCH' on Linux (use arm64, x86_64, or universal)" ;;
+    esac
+
+    echo "build-bundle: dispatching to script/linux/bundle ${LIN_ARGS[*]}"
+    exec "./script/linux/bundle" "${LIN_ARGS[@]}"
+    ;;
+
+  MINGW*|MSYS*|CYGWIN*)
+    # Git Bash / MSYS / Cygwin → invoke the PowerShell bundler.
+    command -v powershell.exe >/dev/null 2>&1 \
+      || command -v pwsh >/dev/null 2>&1 \
+      || die "neither powershell.exe nor pwsh found on PATH"
+
+    PS_ARGS=()
+    PS_ARGS+=("-CHANNEL" "$CHANNEL")
+
+    case "${ARCH:-}" in
+      ""|universal) ;; # let bundle.ps1 pick host arch
+      arm64)        PS_ARGS+=("-ARCH" "arm64") ;;
+      x86_64|x64)   PS_ARGS+=("-ARCH" "x64") ;;
+      *)            die "invalid --arch '$ARCH' on Windows (use arm64, x86_64, or universal)" ;;
+    esac
+
+    if [[ "$SIGN" = true ]]; then
+      [[ -n "${SIGN_TOOL_CMD:-}" ]] \
+        || die "SIGN_TOOL_CMD env var must be set for --sign on Windows (e.g. 'signtool sign /fd SHA256 ... \$f')"
+      command -v signtool.exe >/dev/null 2>&1 \
+        || die "signtool.exe not found on PATH (install Windows SDK)"
+      PS_ARGS+=("-SIGN_TOOL_CMD" "$SIGN_TOOL_CMD")
+    fi
+
+    [[ -n "$RELEASE_TAG" ]] && PS_ARGS+=("-RELEASE_TAG" "$RELEASE_TAG")
+
+    if command -v pwsh >/dev/null 2>&1; then
+      PWSH=pwsh
+    else
+      PWSH=powershell.exe
+    fi
+
+    echo "build-bundle: dispatching to script/windows/bundle.ps1 ${PS_ARGS[*]}"
+    exec "$PWSH" -ExecutionPolicy Bypass -File "./script/windows/bundle.ps1" "${PS_ARGS[@]}"
+    ;;
+
+  *)
+    die "unsupported OS: $OS_TYPE (only Darwin, Linux, and Windows-via-Git-Bash are supported)"
+    ;;
+esac

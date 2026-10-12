@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#
+# Fails when a bundled dock tile plugin carries any icon besides the Mnemos ones in
+# app/DockTilePlugin/Resources. Upstream's plugin shipped Warp's logo icons (classic_*,
+# cow, aurora, warp_2, ...); a stale or prebuilt plugin would ship them again.
+#
+# Usage: script/macos/check_dock_tile_plugin <path to Mnemos.app>
+
+set -euo pipefail
+
+app="${1:?usage: $0 <path to Mnemos.app>}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source_resources="$script_dir/../../app/DockTilePlugin/Resources"
+
+allowed=()
+for f in "$source_resources"/*; do
+  allowed+=("$(basename "$f")")
+done
+
+shopt -s nullglob
+plugins=("$app"/Contents/PlugIns/*.docktileplugin)
+if [[ ${#plugins[@]} -eq 0 ]]; then
+  echo "check_dock_tile_plugin: no dock tile plugin in $app/Contents/PlugIns" >&2
+  exit 1
+fi
+
+status=0
+for plugin in "${plugins[@]}"; do
+  for file in "$plugin"/Contents/Resources/*; do
+    name="$(basename "$file")"
+    ok=false
+    for a in "${allowed[@]}"; do
+      if [[ "$name" == "$a" ]]; then
+        ok=true
+        break
+      fi
+    done
+    if [[ $ok == false ]]; then
+      echo "check_dock_tile_plugin: $plugin ships $name, which is not in app/DockTilePlugin/Resources" >&2
+      status=1
+    fi
+  done
+done
+exit $status

@@ -1,0 +1,81 @@
+[package]
+name = "mnemos_core"
+edition = "2021"
+authors.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[features]
+crash_reporting = ["dep:sentry", "dep:sentry-log"]
+integration_tests = []
+local_fs = []
+release_bundle = []
+# Mnemos IDE: off by default. Without it no RudderStack telemetry is sent, whatever the
+# channel config says, and the telemetry switches stay hidden.
+telemetry = []
+test-util = ["dep:mockito", "mnemos_features/test-util"]
+
+[dependencies]
+anyhow.workspace = true
+cfg-if.workspace = true
+command-corrections.workspace = true
+dashmap.workspace = true
+dirs.workspace = true
+directories.workspace = true
+shellexpand.workspace = true
+enum-iterator.workspace = true
+mnemos_features.workspace = true
+itertools.workspace = true
+getset.workspace = true
+http.workspace = true
+lazy_static.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+settings.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+sentry = { workspace = true, optional = true }
+sentry-log = { workspace = true, optional = true }
+strum.workspace = true
+sysinfo.workspace = true
+thiserror.workspace = true
+concat-idents.workspace = true
+url.workspace = true
+regex.workspace = true
+websocket.workspace = true
+instant.workspace = true
+schemars = "1"
+settings_value = { workspace = true, features = ["derive"] }
+async-broadcast.workspace = true
+futures.workspace = true
+line-ending.workspace = true
+mnemos_ui.workspace = true
+mnemos_ui_extras = { workspace = true, features = ["default"] }
+mockito = { workspace = true, optional = true }
+asset_macro.workspace = true
+string-offset.workspace = true
+inventory = "0.3.20"
+chrono.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa.workspace = true
+objc.workspace = true
+objc2-foundation = { workspace = true, features = [
+    "NSString",
+    "NSURL",
+    "NSFileManager",
+    "NSBundle",
+] }
+tempfile.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
+serde_yaml.workspace = true
+
+[build-dependencies]
+anyhow.workspace = true

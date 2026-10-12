@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -e
+
+# Update the package index before installing dependencies. It can be slow, so the install
+# scripts don't do it (to avoid doing it more than once).
+if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -y
+elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf makecache
+elif command -v pacman >/dev/null 2>&1; then
+    sudo pacman -Sy
+fi
+
+# Install all dependencies needed to build, run, and test Mnemos.
+"$PWD"/script/linux/install_test_deps
+
+# Install linuxdeploy.
+"$PWD"/script/linux/install_linuxdeploy
+
+# Mnemos IDE: upstream logged in to gcloud here for its SSH integration tests, which tunnel
+# into a GCP project only Warp has. Those tests are opt-in now (`--ignored`), so no login.
+
+echo "Your machine is bootstrapped and ready to go."

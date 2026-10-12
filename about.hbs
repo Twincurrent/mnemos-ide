@@ -1,0 +1,19 @@
+Third-Party Licenses for Mnemos IDE
+================================================================================
+
+Mnemos IDE is licensed under the GNU Affero General Public License, version 3
+only (see LICENSE-AGPL and NOTICE). This file lists the third-party components
+it includes and their licenses. Rust crates come from Cargo.lock; the other
+components follow after them.
+
+{{#each licenses}}
+================================================================================
+{{{name}}} ({{id}})
+--------------------------------------------------------------------------------
+Used by:
+{{#each used_by}}  - {{{crate.name}}} {{crate.version}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

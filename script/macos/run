@@ -1,0 +1,191 @@
+#!/bin/bash
+#
+# macOS-specific implementation of `./script/run`. Runs a local version of
+# Mnemos as a real 'app' instead of a bare executable, so macOS can treat it
+# like a real signed app (custom URL schemes, user notifications, etc.).
+#
+# This script is invoked by `./script/run`, which handles cross-platform
+# setup (binary name, the default dev data profile, feature-to-env-var
+# mapping). The following env vars are expected to be set by the caller:
+#   MNEMOS_BIN_NAME     "mnemos"
+#   MNEMOS_CHANNEL      "stable" (the only channel with a binary; "local" is
+#                       still handled below)
+#   FEATURES            comma-separated cargo features (already normalized)
+#   MNEMOS_DATA_PROFILE optional; unset means the installed app's data
+#   MNEMOS_DATA_DIR     optional; the Mnemos IDE store directory (script/run
+#                       maps a legacy TCB_DATA_DIR onto it)
+# Must be called from the root directory of the mnemos repo.
+
+set -e
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd)"
+cd "${REPO_ROOT}"
+
+: "${MNEMOS_BIN_NAME:?MNEMOS_BIN_NAME must be set (invoke via ./script/run)}"
+: "${MNEMOS_CHANNEL:?MNEMOS_CHANNEL must be set (invoke via ./script/run)}"
+: "${FEATURES:?FEATURES must be set (invoke via ./script/run)}"
+
+if [ "$MNEMOS_CHANNEL" = "local" ]; then
+    MNEMOS_APP_PATH="target/debug/bundle/osx/MnemosLocal.app"
+    MNEMOS_SCHEME_NAME="mnemoslocal"
+else
+    MNEMOS_APP_PATH="target/debug/bundle/osx/Mnemos.app"
+    MNEMOS_SCHEME_NAME="mnemos"
+fi
+# Log file the app writes, for --open_with_launchd. Debug builds tag it with the
+# data profile (mnemos_core ChannelState::logfile_name), with characters outside
+# [A-Za-z0-9_-] replaced by '_'; release-like profiles ignore
+# MNEMOS_DATA_PROFILE there and write the plain name.
+LOG_TAG="${MNEMOS_DATA_PROFILE:-debug}"
+LOG_TAG="${LOG_TAG//[!A-Za-z0-9_-]/_}"
+LOG_NAME="mnemos-${LOG_TAG}.log"
+DONT_OPEN=false
+# Launches the binary with "open", meaning the Mnemos process is
+# launched by the MacOS application launcher instead of a shell session.
+# Note that since Mnemos isn't launched as a child process, using ctrl+c
+# won't kill the app (but will kill the tail process displaying output).
+# tl;dr better simulates running Mnemos Dev/Stable
+OPEN_WITH_LAUNCHD=false
+
+# Arguments to pass directly Mnemos (specified after --)
+# This is not supported when opening with launchd, as passing CLI arguments to
+# an application doesn't make sense.
+MNEMOS_ARGS=()
+
+# Export this variable so it can be referenced by app/build.rs later when
+# running `cargo bundle`.
+export FRAMEWORK_OVERRIDE="dev"
+
+PARAMS=""
+while (( "$#" )); do
+  case "$1" in
+    --)
+      shift
+      MNEMOS_ARGS=("$@")
+      break
+      ;;
+    --dont-open)
+      DONT_OPEN=true
+      shift
+      ;;
+    --release)
+      echo "Detected release build, pointing at release bundle under target/release/bundle"
+      if [ "$MNEMOS_CHANNEL" = "local" ]; then
+          MNEMOS_APP_PATH="target/release/bundle/osx/MnemosLocal.app"
+      else
+          MNEMOS_APP_PATH="target/release/bundle/osx/Mnemos.app"
+      fi
+      LOG_NAME="mnemos.log"
+      PARAMS="$PARAMS $1"
+      shift
+      ;;
+    --profile)
+      PROFILE="$2"
+      shift 2
+      # Same split as script/run: only profiles without debug assertions log
+      # to the plain name.
+      case "$PROFILE" in
+          dev|dev-*|*debug_assertions|rltoda) ;;
+          *) LOG_NAME="mnemos.log" ;;
+      esac
+      if [ "$MNEMOS_CHANNEL" = "local" ]; then
+          MNEMOS_APP_PATH="target/${PROFILE}/bundle/osx/MnemosLocal.app"
+      else
+          MNEMOS_APP_PATH="target/${PROFILE}/bundle/osx/Mnemos.app"
+      fi
+      PARAMS="$PARAMS --profile $PROFILE"
+      ;;
+    --open_with_launchd)
+      OPEN_WITH_LAUNCHD=true
+      shift
+      ;;
+    --generate-schema)
+      GENERATE_SCHEMA=true
+      shift
+      ;;
+    *) # preserve positional arguments
+      PARAMS="$PARAMS $1"
+      shift
+      ;;
+  esac
+done
+
+# crates/mnemos_ui's build script needs `xcrun metal`, which is a stub while the
+# MetalToolchain component is uninstalled. Put the cached-toolchain shim on PATH
+# (same as script/macos/bundle). Non-fatal: the build script has its own
+# fallback and reports the details if neither works.
+METAL_SHIM_DIR="$("${REPO_ROOT}/script/macos/metal_toolchain")" || METAL_SHIM_DIR=""
+if [[ -n "$METAL_SHIM_DIR" ]]; then
+    export PATH="$METAL_SHIM_DIR:$PATH"
+fi
+
+rm -rf "$MNEMOS_APP_PATH"
+
+pushd app > /dev/null
+echo "Bundling app (bin: $MNEMOS_BIN_NAME)..."
+cargo bundle --bin "$MNEMOS_BIN_NAME" --features "$FEATURES" $PARAMS
+echo "Successfully bundled..."
+popd > /dev/null
+
+if [[ ",$FEATURES," =~ ",cocoa_sentry," ]]; then
+  echo "Copying Sentry framework into app bundle..."
+  SENTRY_FRAMEWORK="app/frameworks/dev/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework"
+  cp -a "$SENTRY_FRAMEWORK" "$MNEMOS_APP_PATH/Contents/Frameworks/"
+fi
+echo "Adding rpath to support mac frameworks (e.g. Sentry)"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$MNEMOS_APP_PATH/Contents/MacOS/$MNEMOS_BIN_NAME"
+
+export MNEMOS_SCHEME_NAME
+export MNEMOS_PLIST_PATH="$MNEMOS_APP_PATH/Contents/Info.plist"
+./script/update_plist
+
+echo "Preparing bundled resources..."
+if [ "${GENERATE_SCHEMA:-false}" != "true" ]; then
+  export SKIP_SETTINGS_SCHEMA=1
+fi
+NO_LICENSES=1 "${REPO_ROOT}/script/prepare_bundled_resources" "$MNEMOS_APP_PATH/Contents/Resources" "$MNEMOS_CHANNEL"
+
+"${REPO_ROOT}/script/compile_icon" "$MNEMOS_CHANNEL" "$MNEMOS_APP_PATH"
+
+if [[ ",$FEATURES," =~ ",heap_usage_tracking," ]]; then
+  echo "Bundling pprof..."
+  HELPERS_DIR="$MNEMOS_APP_PATH/Contents/Helpers"
+  "${REPO_ROOT}/script/prepare_bundled_pprof" "$HELPERS_DIR"
+fi
+
+echo "Codesigning app..."
+SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+codesign --force --deep --options runtime --sign "${SIGNING_CERT:--}" "$MNEMOS_APP_PATH" --entitlements script/Debug-Entitlements.plist
+
+if [ "$DONT_OPEN" = false ] ; then
+    if  [ "$OPEN_WITH_LAUNCHD" = true ]; then
+        echo "Launching with MacOS application launcher"
+        # open(1) documents that the launched app inherits this environment. The
+        # isolation variables go through --env anyway, so the launch states them
+        # explicitly instead of relying on that.
+        OPEN_ENV_ARGS=()
+        if [[ -n "${MNEMOS_DATA_PROFILE:-}" ]]; then
+            OPEN_ENV_ARGS+=(--env "MNEMOS_DATA_PROFILE=$MNEMOS_DATA_PROFILE")
+        fi
+        if [[ -n "${MNEMOS_DATA_DIR:-}" ]]; then
+            OPEN_ENV_ARGS+=(--env "MNEMOS_DATA_DIR=$MNEMOS_DATA_DIR")
+        fi
+        # Older shells and scripts may still set only the pre-rename name,
+        # which the app reads when MNEMOS_DATA_DIR is unset.
+        if [[ -n "${TCB_DATA_DIR:-}" ]]; then
+            OPEN_ENV_ARGS+=(--env "TCB_DATA_DIR=$TCB_DATA_DIR")
+        fi
+        PATH="" /usr/bin/open ${OPEN_ENV_ARGS[@]+"${OPEN_ENV_ARGS[@]}"} "./$MNEMOS_APP_PATH"
+        if [ "$LOG_NAME" = "mnemos.log" ]; then
+            # A release-like build shares the installed app's log name. When the
+            # installed app already owns that log, the app writes
+            # mnemos.secondary.log instead, and this tail shows the installed app.
+            echo "Tailing ~/Library/Logs/$LOG_NAME; if the installed app is running, see ~/Library/Logs/mnemos.secondary.log instead."
+        fi
+        # -F: the log may not exist yet.
+        tail -F ~/Library/Logs/"$LOG_NAME"
+    else
+        echo "Opening app at ./$MNEMOS_APP_PATH/Contents/MacOS/$MNEMOS_BIN_NAME"
+        "./$MNEMOS_APP_PATH/Contents/MacOS/$MNEMOS_BIN_NAME" "${MNEMOS_ARGS[@]}"
+    fi
+fi

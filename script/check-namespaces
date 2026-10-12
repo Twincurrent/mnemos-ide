@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+#
+# Fails when a tracked file names an install source, domain or artwork Mnemos does not own:
+# upstream Warp's names after the Warp -> Mnemos rename (the GitHub org "mnemos" + "dotdev",
+# the npm scope "mnemos-dot-dev", the domain "mnemos" + ".dev"), Warp's logo glyph name in a
+# bundled font, Warp's company name outside the attribution files, Warp's own domain
+# ("warp" + ".dev", text files only; tests use example.org or a .test name), and the private TwinCurrent
+# repository (Twincurrent/TCB, which GitHub serves as Twincurrent/Mnemos; outsiders get a 404 and
+# the public repo is the one in script/source-url). Any of these can come
+# back with an upstream merge or a fresh rename pass; nobody owns them, so whoever registers
+# one controls what Mnemos installs or links to.
+#
+# Intentional mentions are listed in script/check-namespaces-allowlist.txt, one
+# "<path> <regex>" per line: a hit is ignored when its path equals <path> and the matched
+# line matches <regex> (extended, case-insensitive). Keep every entry commented.
+#
+# Usage: script/check-namespaces [DIR]   (default: this repo; only tracked files are read)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET="$(cd "${1:-$SCRIPT_DIR/..}" && pwd)"
+ALLOWLIST="$SCRIPT_DIR/check-namespaces-allowlist.txt"
+
+# Split so this file does not match itself.
+PATTERN="mnemos""dotdev|mnemos-dot""-dev|mnemos\\.""dev|warp""logo|denver ""technologies"
+PATTERN+="|twincurrent/""(mnemos|tcb)([^-a-z0-9_]|$)"
+
+# Warp's own domain, in text files only: the binary fixtures (the fasttext model, the sqlite
+# test databases) contain it as data nobody fetches.
+TEXT_PATTERN="$PATTERN|warp\\.""dev"
+
+hits="$(git -C "$TARGET" grep -n -I -i -E "$TEXT_PATTERN" -- \
+    ':!script/check-namespaces' ':!script/check-namespaces-allowlist.txt' || true)"
+# Binary files (the bundled fonts) are matched by name only.
+binary_hits="$(git -C "$TARGET" grep -l -a -i -E "$PATTERN" -- \
+    ':!script/check-namespaces' ':!script/check-namespaces-allowlist.txt' || true)"
+
+allowed() {
+    local path="$1" line="$2" entry_path entry_regex
+    [[ -f "$ALLOWLIST" ]] || return 1
+    while read -r entry_path entry_regex; do
+        # A Windows checkout may have CRLF line endings; a stray \r would never match.
+        entry_regex="${entry_regex%$'\r'}"
+        [[ -z "$entry_path" || "$entry_path" == \#* ]] && continue
+        if [[ "$path" == "$entry_path" ]] && printf '%s\n' "$line" | grep -q -i -E -- "$entry_regex"; then
+            return 0
+        fi
+    done < "$ALLOWLIST"
+    return 1
+}
+
+status=0
+text_files=""
+while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    path="${hit%%:*}"
+    rest="${hit#*:}"
+    line="${rest#*:}"
+    line="${line%$'\r'}"
+    text_files+="$path"$'\n'
+    if ! allowed "$path" "$line"; then
+        echo "check-namespaces: $hit" >&2
+        status=1
+    fi
+done <<< "$hits"
+
+while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    if ! grep -qxF -- "$path" <<< "$text_files"; then
+        echo "check-namespaces: binary file $path contains an unowned name (for a font: Warp's logo glyph)" >&2
+        status=1
+    fi
+done <<< "$binary_hits"
+
+if [[ $status -ne 0 ]]; then
+    echo "check-namespaces: replace the names above (tests: example.org), or allowlist an intentional mention in $ALLOWLIST" >&2
+else
+    echo "check-namespaces: ok"
+fi
+exit $status

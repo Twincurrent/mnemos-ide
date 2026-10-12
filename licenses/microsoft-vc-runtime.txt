@@ -1,0 +1,15 @@
+Microsoft Visual C++ runtime
+
+vcruntime140.dll, vcruntime140_1.dll and msvcp140.dll (Microsoft Visual C++
+Redistributable 14.44, Copyright (C) Microsoft Corporation) are copied into the
+Windows installer from app/assets/windows/<arch>/. They are Microsoft binaries,
+not covered by the AGPL, redistributed under the "Distributable Code" terms of
+the Microsoft Visual Studio license
+(https://visualstudio.microsoft.com/license-terms/; the redistributable files
+are listed at
+https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files).
+
+They are the runtime library of the compiler Mnemos is built with, so under
+AGPL-3.0 section 1 they are System Libraries: they are not part of Mnemos's
+Corresponding Source, and their terms add no restriction to Mnemos's own
+license.

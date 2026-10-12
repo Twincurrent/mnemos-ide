@@ -1,0 +1,189 @@
+{
+  "platform": "darwin",
+  "home": "/Users/alice",
+  "dirs": [
+    {
+      "path": "/Users/alice/code/Admin",
+      "git": true,
+      "remote": "git@github.com:acme/Admin.git"
+    },
+    {
+      "path": "/Users/alice/code/Portfolio",
+      "git": true,
+      "remote": "https://github.com/acme/Portfolio.git"
+    },
+    {
+      "path": "/Users/alice/code/tcbv2",
+      "git": true,
+      "remote": "git@github.com:acme/TCB.git"
+    },
+    {
+      "path": "/Users/alice/code/TCB",
+      "git": true,
+      "remote": "https://github.com/bob/TCB"
+    },
+    {
+      "path": "/Users/alice/code/sprocket",
+      "git": true,
+      "remote": "git@github.com:acme/sprocket.git"
+    },
+    {
+      "path": "/Users/alice/code/gizmo",
+      "git": true,
+      "remote": "git@github.com:acme/gizmo.git"
+    },
+    {
+      "path": "/Users/alice/code/Doohickey",
+      "git": true,
+      "remote": "git@github.com:acme/Doohickey.git"
+    },
+    {
+      "path": "/Users/alice/code/acme-website",
+      "git": true,
+      "remote": "https://github.com/bob/acme-website.git"
+    },
+    {
+      "path": "/Users/alice/code/gadget",
+      "git": true,
+      "remote": "git@github.com:acme/gadget.git"
+    },
+    {
+      "path": "/Users/alice/code/Ledger_App",
+      "git": true,
+      "remote": "git@github.com:acme/Ledger_App.git"
+    },
+    {
+      "path": "/Users/alice/code/games",
+      "git": true,
+      "remote": null
+    },
+    {
+      "path": "/Users/alice/code/qa",
+      "git": false,
+      "remote": null
+    },
+    {
+      "path": "/Users/alice/skole",
+      "git": false,
+      "remote": null
+    },
+    {
+      "path": "/Users/alice/Development/globex/globex",
+      "git": true,
+      "remote": "https://gx@dev.azure.com/gx/Globex/_git/globex"
+    },
+    {
+      "path": "/Users/alice/Development/globex/globex-frontend-web",
+      "git": true,
+      "remote": "git@github.com:globex/globex-frontend-web.git"
+    },
+    {
+      "path": "/Users/alice/Development/globex/chromeextension",
+      "git": true,
+      "remote": "git@github.com:globex/chromeextension.git"
+    },
+    {
+      "path": "/Users/alice/Development/globex/mobile",
+      "git": true,
+      "remote": "https://github.com/globex/GXMOBILE.git"
+    }
+  ],
+  "tabs": [
+    {
+      "key": 1,
+      "title": "Portfolio",
+      "projectId": "project-1788521352218",
+      "cwds": [
+        "/Users/alice/code/Portfolio"
+      ]
+    },
+    {
+      "key": 2,
+      "title": "tcbv2",
+      "projectId": "project-1785759543717",
+      "cwds": [
+        "/Users/alice/code/tcbv2"
+      ]
+    },
+    {
+      "key": 3,
+      "title": "Skole",
+      "projectId": "project-1785759543717",
+      "cwds": [
+        "/Users/alice/skole",
+        "/Users/alice/code"
+      ]
+    },
+    {
+      "key": 4,
+      "title": "Admin",
+      "projectId": "3f83538b-9bd1-4cbb-a9b5-e41fae754c35",
+      "cwds": [
+        "/Users/alice/code/Admin"
+      ]
+    },
+    {
+      "key": 5,
+      "title": "sprocket",
+      "projectId": "95808a98-3004-473f-a389-665d734452a4",
+      "cwds": [
+        "/Users/alice/code/sprocket"
+      ]
+    },
+    {
+      "key": 6,
+      "title": null,
+      "projectId": null,
+      "cwds": []
+    },
+    {
+      "key": 7,
+      "title": "globex",
+      "projectId": "project-1785731103889",
+      "cwds": [
+        "/Users/alice"
+      ]
+    },
+    {
+      "key": 8,
+      "title": "mobile",
+      "projectId": "project-1785731103889",
+      "cwds": [
+        "/Users/alice/Development/globex/mobile"
+      ]
+    },
+    {
+      "key": 9,
+      "title": "games",
+      "projectId": "project-1787490980893",
+      "cwds": [
+        "/Users/alice/code/games"
+      ]
+    },
+    {
+      "key": 10,
+      "title": "gizmo",
+      "projectId": "project-1788169499352",
+      "cwds": [
+        "/Users/alice/code/gizmo",
+        "/Users/alice"
+      ]
+    },
+    {
+      "key": 11,
+      "title": "notes app",
+      "projectId": "project-1785937133450",
+      "cwds": [
+        "/Users/alice/code/qa"
+      ]
+    },
+    {
+      "key": 12,
+      "title": null,
+      "projectId": "project-1788521352218",
+      "cwds": [
+        "/Users/alice"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+# cargo-deny gate for advisories, licenses, sources and bans. Run
+#   cargo deny check advisories licenses sources bans
+# script/ide-check runs licenses, sources and bans offline, and advisories
+# whenever it can fetch the RustSec database (read-only). Restored from
+# upstream Warp's config and narrowed to what an AGPL-3.0-only program may
+# include.
+#
+# Every ignore below says why the advisory does not reach Mnemos or why no
+# compatible fix exists yet. Drop an ignore as soon as a fix lands; cargo-deny
+# warns about an ignore that no longer matches anything.
+
+[advisories]
+git-fetch-with-cli = true
+ignore = [
+    { id = "RUSTSEC-2025-0119", reason = "number_prefix is unmaintained, not vulnerable; it only formats progress bars through tokenizers -> indicatif. Drop when tokenizers moves off it." },
+    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is unmaintained, not vulnerable; it arrives through ureq. Drop when ureq moves to rustls-pki-types' PEM parser." },
+    { id = "RUSTSEC-2025-0141", reason = "bincode is unmaintained, but considered to be complete." },
+    { id = "RUSTSEC-2024-0388", reason = "derivative is unmaintained; we should try to find an alternative." },
+    { id = "RUSTSEC-2024-0425", reason = "get-size is unmaintained; we should try to find an alternative." },
+    { id = "RUSTSEC-2024-0427", reason = "get-size-derive is an unmaintained dependency of get-size." },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error is a unmaintained dependency of get-size-derive." },
+    { id = "RUSTSEC-2024-0384", reason = "instant is unmaintained; we should migrate to web-time." },
+    { id = "RUSTSEC-2020-0077", reason = "memmap is unmaintained; we should migrate to memmap2." },
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; this is a dependency of metal, which we should eliminate by moving to the objc2 family of crates." },
+    { id = "RUSTSEC-2026-0183", reason = "git2 0.20: Remote::list() is never called; the fix is git2 0.21, an API break for mnemos-ide-git-tree and the app (Result-returning ref accessors)." },
+    { id = "RUSTSEC-2026-0184", reason = "git2 0.20: no blame API is used anywhere; the fix is git2 0.21, an API break for mnemos-ide-git-tree and the app." },
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.37 only reaches the build through tauri-winrt-notification (Windows toasts), which writes XML from our own strings and never parses untrusted input; there is no 0.37 fix." },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.37 only reaches the build through tauri-winrt-notification (Windows toasts), which never reads namespaced XML from outside; there is no 0.37 fix." },
+    { id = "RUSTSEC-2026-0235", reason = "rkyv 0.7 is only used at build time by cynic-codegen (a proc-macro) on our own GraphQL schema, never on untrusted archives; the fix is rkyv 0.8, which cynic does not use yet." },
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz is unmaintained; cosmic-text (text shaping) and usvg pull it in and have no maintained replacement in these versions yet." },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained; cosmic-text, fontdb and usvg pull it in and have no maintained replacement in these versions yet." },
+]
+
+[licenses]
+# Our own workspace crates (publish = false) are covered by LICENSE-AGPL,
+# LICENSE-MIT and NOTICE.
+private = { ignore = true }
+# Keep in sync with `accepted` in about.toml. Every entry must be compatible
+# with distributing the whole program under AGPL-3.0-only.
+allow = [
+    "0BSD",
+    "AGPL-3.0-only",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "NCSA",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+# command-corrections: its Cargo.toml says AGPL-3.0-only, its LICENSE.md is
+# MIT (see about.toml). Both are allowed, so no clarification is needed here.
+
+[bans]
+# We allow dependencies on multiple versions of crates.
+multiple-versions = "allow"
+# Do not allow wildcard versions, except in our private path-based
+# dependencies (i.e. workspace crates).
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = [
+    # Core Foundation crates until they publish an updated version to crates.io.
+    "https://github.com/servo/core-foundation-rs",
+]
+# Git dependencies on Warp's GitHub organization. They have to stay reachable
+# for the Corresponding Source to build; mirror them under an owned org.
+allow-org = { github = ["warpdotdev"] }

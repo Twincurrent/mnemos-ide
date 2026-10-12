@@ -1,0 +1,35 @@
+[package]
+name = "http_client"
+edition = "2024"
+authors.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[features]
+# Mnemos IDE: new_for_test turns off the webpki roots, which needs the reqwest
+# feature that defines that switch. The app gets it from mnemos-ide-sync; a
+# crate tested on its own did not, so it failed to compile.
+test-util = ["reqwest/rustls-tls-webpki-roots-no-provider"]
+
+[dependencies]
+anyhow.workspace = true
+async-compat.workspace = true
+async-stream.workspace = true
+bytes.workspace = true
+cfg-if.workspace = true
+futures.workspace = true
+http.workspace = true
+log.workspace = true
+oauth2.workspace = true
+prevent_sleep.workspace = true
+prost.workspace = true
+reqwest.workspace = true
+reqwest-eventsource.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_urlencoded.workspace = true
+mnemos_core.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo.workspace = true
+wasm-bindgen-futures.workspace = true

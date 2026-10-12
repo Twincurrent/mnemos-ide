@@ -1,0 +1,3 @@
+# Parsing edition for a bare `rustfmt <file>` (editors), so files that use 2024 syntax
+# (let-chains) format. `cargo fmt` passes each crate's own edition, which takes precedence.
+edition = "2024"

@@ -1,0 +1,56 @@
+[package]
+name = "mnemos-ide-sync"
+version = "0.0.1"
+edition = "2021"
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+mnemos-ide-core = { path = "../mnemos-ide-core" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "sync", "macros", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+keyring = "2"
+thiserror = "1"
+# "log-always" mirrors tracing events into the `log` crate even though the
+# app installs a global NoSubscriber tracing dispatch (app/src/tracing.rs) —
+# with plain "log" that dispatch suppresses the mirror and the sync pipeline
+# is invisible in mnemos.log.
+tracing = { version = "0.1", features = ["log-always"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+notify = "6"
+notify-debouncer-full = "0.3"
+sha2 = "0.10"
+# settings_toml.rs: per-key settings.toml sync, keeping the file's comments.
+toml_edit.workspace = true
+base64 = "0.22"
+# crypto.rs: end-to-end encryption of personal sync data. Default features
+# off: nonces and keys come from `rand`'s OsRng, not aead's getrandom hook.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+hkdf = "0.12"
+rand.workspace = true
+dirs = "6"
+# transcripts.rs: gzip segments, random machine id, registry roots.
+flate2 = "1"
+uuid.workspace = true
+# transcripts.rs: is the Claude Code process named in ~/.claude/sessions alive.
+sysinfo.workspace = true
+# The workspace's clippy config disallows std::time::Instant.
+instant.workspace = true
+# The `projects` key is applied through ProjectStore's locked update (the app
+# edits the same file), and memory dirs use its checkout resolver.
+mnemos-ide-projects = { path = "../mnemos-ide-projects" }
+# live_agents.rs: secret redaction in the live agents feed.
+regex.workspace = true
+
+[dev-dependencies]
+# net + io-util: manager tests run the real push/pull code against a small
+# in-process HTTP stand-in for the admin state API.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tempfile = "3"

@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# Installs macOS-specific build dependencies required to build Mnemos.
+
+# The Metal compiler is a separately installed Xcode component. If the download fails (for
+# example because gdmf.apple.com is blocked on this machine), fall back to the locally cached
+# asset through script/macos/metal_toolchain, which the build scripts also use.
+if ! xcodebuild -downloadComponent MetalToolchain; then
+    if "$(dirname "$0")/metal_toolchain" >/dev/null; then
+        echo "MetalToolchain download failed; builds will use the cached toolchain via script/macos/metal_toolchain."
+    else
+        echo "MetalToolchain is unavailable and no cached asset could be mounted." >&2
+        echo "Retry 'xcodebuild -downloadComponent MetalToolchain' (see script/macos/metal_toolchain for details)." >&2
+        exit 1
+    fi
+fi

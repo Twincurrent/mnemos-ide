@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mnemos · AppIcon Glyph
+  Two halves of one disc, split on the diagonal: off-white above, lime below.
+  One memory on two machines. Transparent background; the AppIcon plate is
+  set in icon.json. 1024x1024, the 64-unit design grid scaled by 16.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" fill="none">
+  <g transform="rotate(45 512 512)">
+    <path fill="#F4F1EA" d="M212 470 A300 300 0 0 1 812 470 Z"/>
+    <path fill="#C6F35A" d="M212 554 A300 300 0 0 0 812 554 Z"/>
+  </g>
+</svg>
