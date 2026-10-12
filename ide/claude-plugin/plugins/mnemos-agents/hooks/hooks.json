@@ -7,12 +7,18 @@
         "hooks": [
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-session-start.sh" }
         ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-team-context.sh" }
+        ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-prompt-submit.sh" }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-prompt-submit.sh" },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/on-team-context.sh" }
         ]
       }
     ],

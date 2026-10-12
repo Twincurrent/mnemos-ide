@@ -71,6 +71,9 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     AliasExpansionSettings::register(ctx);
     // Mnemos IDE: trust of CLI agent events without a token.
     CliAgentEventSettings::register(ctx);
+    // Mnemos IDE: team sessions (a coordinator starting Claude sessions).
+    #[cfg(not(target_family = "wasm"))]
+    crate::workspace::team_control::TeamSettings::register(ctx);
     CodeSettings::register(ctx);
     LigatureSettings::register(ctx);
     GPUSettings::register(ctx);

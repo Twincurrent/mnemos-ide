@@ -524,8 +524,35 @@ impl Workspace {
                     // The panel has no age timer of its own for sessions.
                     me.left_panel_view
                         .update(ctx, |panel, pctx| panel.repaint_session_ages(pctx));
+                    me.ide_refresh_team_board(ctx);
                 }
                 me.ide_schedule_claude_sessions_tick(TICK, ctx);
+            },
+        );
+    }
+
+    /// Re-read the active project's team board (`team.sh`) off the main
+    /// thread and show it as the Agents panel's TEAM section.
+    fn ide_refresh_team_board(&mut self, ctx: &mut ViewContext<Self>) {
+        let root = self.left_panel_view.as_ref(ctx).agents_active_project_path(ctx);
+        let _ = ctx.spawn(
+            async move {
+                if root.is_empty() {
+                    return Vec::new();
+                }
+                mnemos_ide_team::board::read(Path::new(&root))
+                    .into_iter()
+                    .map(|r| mnemos_ide_agents::TeamRow {
+                        name: r.name,
+                        state: r.state,
+                        task: r.task,
+                        sha: r.sha,
+                    })
+                    .collect()
+            },
+            |me, rows, ctx| {
+                me.left_panel_view
+                    .update(ctx, |panel, pctx| panel.set_team_board(rows, pctx));
             },
         );
     }

@@ -4201,6 +4201,31 @@ impl PaneGroup {
         Some(view)
     }
 
+    /// Mnemos IDE: split a new terminal pane to the right of `base` (a pane of
+    /// this group), starting in `directory` with `env_vars` added to its
+    /// environment and the same shell as `base`, and run `command` there once
+    /// its shell is up. Focus stays where it was. Team sessions
+    /// (`workspace::team_control`) start this way, next to their coordinator.
+    pub fn ide_split_terminal_running(
+        &mut self,
+        base: PaneId,
+        directory: PathBuf,
+        env_vars: HashMap<OsString, OsString>,
+        command: &str,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<ViewHandle<TerminalView>> {
+        let chosen_shell = self
+            .terminal_view_from_pane_id(base, ctx)
+            .and_then(|view| view.as_ref(ctx).model.lock().shell_launch_state().available_shell());
+        let (pane_data, view) =
+            self.create_terminal_pane_data(Some(directory), env_vars, chosen_shell, None, ctx);
+        self.add_pane(Direction::Right, Some(base), Box::new(pane_data), false, ctx)?;
+        view.update(ctx, |terminal, terminal_ctx| {
+            terminal.execute_command_or_set_pending(command, terminal_ctx);
+        });
+        Some(view)
+    }
+
     /// The body of [`Self::add_terminal_tab`], with the directory and shell
     /// chosen by the caller.
     fn add_terminal_tab_in(

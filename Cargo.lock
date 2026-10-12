@@ -7934,6 +7934,7 @@ dependencies = [
  "mnemos-ide-projects",
  "mnemos-ide-sessions",
  "mnemos-ide-sync",
+ "mnemos-ide-team",
  "mnemos_cli",
  "mnemos_completer",
  "mnemos_core",
@@ -7974,6 +7975,7 @@ dependencies = [
  "pin-project",
  "plist",
  "pprof",
+ "prevent_sleep",
  "prost 0.14.3",
  "prost-build",
  "prost-types",
@@ -8177,6 +8179,19 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "mnemos-ide-team"
+version = "0.0.1"
+dependencies = [
+ "command",
+ "instant",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "walkdir",
 ]
 
 [[package]]

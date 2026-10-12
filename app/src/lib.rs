@@ -1604,6 +1604,8 @@ fn initialize_app(
         ctx.add_singleton_model(
             crate::terminal::cli_agent_sessions::file_ingest::CLIAgentEventFileIngestor::new,
         );
+        // Mnemos IDE: the team MCP server (off unless agents.team.enabled).
+        ctx.add_singleton_model(crate::workspace::team_control::TeamControl::new);
     }
     // ActiveAgentViewsModel is used to track active agent conversations and notify listeners when they change.
     ctx.add_singleton_model(|_| ActiveAgentViewsModel::new());

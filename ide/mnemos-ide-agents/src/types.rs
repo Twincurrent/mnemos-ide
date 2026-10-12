@@ -246,3 +246,13 @@ mod tests {
         )));
     }
 }
+
+/// One row of the active project's team status board (`<git common dir>/mnemos-team/
+/// board.json`, written by the mnemos-agents plugin's `team.sh set`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamRow {
+    pub name: String,
+    pub state: String,
+    pub task: Option<String>,
+    pub sha: Option<String>,
+}

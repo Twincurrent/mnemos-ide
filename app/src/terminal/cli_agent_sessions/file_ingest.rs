@@ -174,6 +174,13 @@ impl CLIAgentEventFileIngestor {
         precreate_event_file(&event_file);
     }
 
+    /// Mnemos IDE: the terminal view a live token belongs to. The team MCP
+    /// server (`workspace::team_control`) authenticates callers this way: the
+    /// token is only in the environment of processes started in that pane.
+    pub fn terminal_view_for_token(&self, token: &str) -> Option<EntityId> {
+        self.tokens.get(token).copied()
+    }
+
     /// Drops the token mapping, stops tracking the file, and deletes it.
     ///
     /// Called from the terminal pane detach path — but ONLY for non-`Moved`

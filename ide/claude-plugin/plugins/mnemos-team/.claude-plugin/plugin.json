@@ -1,0 +1,20 @@
+{
+  "name": "mnemos-team",
+  "version": "1.0.0",
+  "description": "Lets a Claude Code session in Mnemos start and manage other Claude Code sessions in panes next to it (spawn, list, focus, rename, retire) and clean up their git worktrees. Needs Mnemos with agents.team.enabled; the first spawn from a session asks you to allow it.",
+  "author": {
+    "name": "TwinCurrent",
+    "url": "https://twincurrent.dk"
+  },
+  "homepage": "https://twincurrent.dk",
+  "license": "MIT",
+  "mcpServers": {
+    "mnemos-team": {
+      "type": "http",
+      "url": "${MNEMOS_TEAM_MCP_URL:-http://127.0.0.1:9/mnemos-team-is-off}",
+      "headers": {
+        "Authorization": "Bearer ${MNEMOS_CLI_AGENT_TOKEN:-none}"
+      }
+    }
+  }
+}

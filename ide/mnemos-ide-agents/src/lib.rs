@@ -9,7 +9,8 @@
 //! Running rows come from `app::terminal::cli_agent_sessions::CLIAgentSessionsModel`
 //! (pushed via `set_rows`), other machines' from `agents-live` snapshots
 //! (`set_remote_machines`), past sessions from the transcripts on disk
-//! (`set_session_groups`). The panel never reads the disk or the network.
+//! (`set_session_groups`), and the active project's team board from the app
+//! (`set_team_board`). The panel never reads the disk or the network.
 
 #![forbid(unsafe_code)]
 // Mnemos IDE: alongside the forbid above. If unsafe is ever allowed in this crate, every
@@ -21,6 +22,6 @@ pub mod view;
 
 pub use types::{
     is_remote_control_url, platform_name, AgentKind, AgentRow, AgentStatus, PluginHint,
-    PluginHintSeverity, RemoteMachine, SessionGroup, SessionRow, SessionState,
+    PluginHintSeverity, RemoteMachine, SessionGroup, SessionRow, SessionState, TeamRow,
 };
 pub use view::{AgentsPanel, AgentsPanelEvent, CancelTarget};

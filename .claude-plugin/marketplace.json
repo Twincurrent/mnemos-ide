@@ -10,9 +10,26 @@
       "name": "mnemos-agents",
       "description": "Streams Claude Code session events (cwd, prompts, responses, tool calls, permission/idle state) to the Mnemos agents panel via OSC 777.",
       "source": "./ide/claude-plugin/plugins/mnemos-agents",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "category": "productivity",
-      "tags": ["mnemos", "terminal", "agents", "notifications"]
+      "tags": [
+        "mnemos",
+        "terminal",
+        "agents",
+        "notifications"
+      ]
+    },
+    {
+      "name": "mnemos-team",
+      "description": "Start and manage Claude Code sessions in panes next to yours in a Mnemos project tab, through Mnemos's local team MCP server (opt-in: agents.team.enabled).",
+      "source": "./ide/claude-plugin/plugins/mnemos-team",
+      "version": "1.0.0",
+      "category": "productivity",
+      "tags": [
+        "mnemos",
+        "agents",
+        "orchestration"
+      ]
     }
   ]
 }

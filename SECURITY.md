@@ -132,6 +132,12 @@ What the code does today. `PRIVACY.md` describes what data goes where.
   echo a one-time nonce, so program output cannot make Mnemos type a script into the terminal.
 - Language servers and Node.js that Mnemos downloads are pinned to versions with SHA-256 digests
   and verified before use.
+- Team sessions (`agents.team.enabled`, off by default) run an MCP server on a random loopback
+  port. Every request must carry the calling pane's terminal token as a bearer token; requests
+  with an `Origin` header or a foreign `Host` are refused, so a web page cannot reach it. The first
+  spawn from a pane needs the user's approval, spawned sessions cannot spawn, spawns are capped (6
+  live, 3 a minute), and a spawned session skips Claude Code's permission prompts only when the
+  local, never-synced `agents.team.spawn_skip_permissions` is on.
 - The `ide/mnemos-ide-*` crates forbid `unsafe` code.
 
 ### Deletion

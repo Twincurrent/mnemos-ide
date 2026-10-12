@@ -31,7 +31,7 @@ starting `Mnemos IDE:`). It also removed or compiled out a good part of Warp's c
 
 ```
 mnemos/
-├── Cargo.toml                 # workspace root: crates/*, app, and the 7 ide/* crates
+├── Cargo.toml                 # workspace root: crates/*, app, and the 8 ide/* crates
 ├── app/                       # the main binary (`mnemos`), plus the Mnemos IDE wiring
 │   └── src/
 │       ├── bin/mnemos.rs      # entry; dev isolation defaults, sets Channel::Stable, calls lib.rs::run()
@@ -156,6 +156,11 @@ tags, open pull requests (through the `gh` CLI) and the commit graph, with safe 
 `model.rs` wraps `git2`, `lane_router.rs` assigns graph lanes, `prs.rs` parses `gh pr list`,
 `view.rs` renders. `AGENTS.md` "The git tree panel" has the details.
 
+### `mnemos-ide-team`
+The UI-free half of team sessions (see "Team sessions"): validation, the launch command, spawn
+caps, leases, git worktrees, the team board reader and the MCP messages. Unit-tested on its own,
+worktrees against scratch repositories.
+
 ### `ide/claude-plugin`
 Not a crate: a Claude Code plugin marketplace whose `mnemos-agents` plugin has hooks that stream
 session events (status, prompts, tool and permission state, Remote Control URL, background task
@@ -168,7 +173,42 @@ the app refreshes the registered marketplace in place (`claude plugin marketplac
 then `claude plugin update mnemos-agents@mnemos`) and never removes it; only when no `mnemos`
 marketplace is registered does it add one. Re-pointing a marketplace whose directory moved stays a
 manual step (`AGENTS.md`). From 1.2.0 the plugin sends this terminal's token with every event
-(see "CLI agent events").
+(see "CLI agent events"). From 1.3.0 it also carries team rules and a board (`scripts/team.sh`,
+`on-team-context.sh`). The marketplace's second plugin, `mnemos-team`, only declares the team MCP
+server (`"Bearer ${MNEMOS_CLI_AGENT_TOKEN}"` against `${MNEMOS_TEAM_MCP_URL}`).
+
+### Team sessions
+A Claude Code session in a Mnemos pane (the coordinator) can start worker sessions in panes next to
+it and manage them. Three layers:
+
+- **Rules and board, no app needed.** `<git common dir>/mnemos-team/rules.md` and `board.json`
+  are shared by every worktree of a repository and never committed. The mnemos-agents hook
+  `on-team-context.sh` adds a changed rules file or board to each session's next turn, once per
+  change, and all of it again on SessionStart. Sessions update the board with `team.sh set`. The
+  agents panel shows the active project's board as TEAM, re-read on its sessions tick.
+- **The team MCP server** (`app/src/workspace/team_control.rs`). With `agents.team.enabled` the
+  app listens on a random loopback port and exports `MNEMOS_TEAM_MCP_URL` to new terminals. Each
+  request's bearer token is looked up in `CLIAgentEventFileIngestor` (`terminal_view_for_token`),
+  which names the calling pane and its tab; an unknown token gets 401, any `Origin` header or a
+  foreign `Host` 403. Answers are plain `application/json`, notifications 202.
+- **The tools.** `spawn_session` splits a pane to the right of the caller
+  (`PaneGroup::ide_split_terminal_running`) in the caller's own tab, optionally in a new git
+  worktree, and runs `claude --name <name> [--model m] [--dangerously-skip-permissions]
+  "$MNEMOS_TEAM_BRIEF"` once the shell is up, with the brief and `USE_BUILTIN_RIPGREP=0` in the
+  pane's environment. `list_sessions`, `focus_session`, `rename_session` and `retire_session` act
+  on the sessions in the caller's tab; retire refuses while the session is working, checks the
+  worktree first (dirty or unmerged: refused, nothing closed), then closes the pane and removes the
+  worktree and its merged branch. `list_worktrees` and `prune_worktrees` report on and clean the
+  repository's worktrees. `lease`, `release` and `list_leases` hand out cpu, chrome and port
+  leases that end on release, expiry or when the holder's pane closes.
+
+Guards: the first spawn from a pane opens an Allow/Deny dialog, remembered while the pane lives;
+spawned panes can never spawn; at most 6 spawned sessions live and 3 spawns a minute; every spawn
+shows a toast and its brief is the session's first prompt on screen; every call is logged under the
+`mnemos_ide_team` target. `agents.team.spawn_skip_permissions` (local, never synced, off by
+default) is the only way a spawned session skips permission prompts. `agents.team.keep_awake`
+(local, off by default) keeps the computer from idle sleep while any agent works. Messaging between
+sessions is Claude Code's own (SendMessage), not this server's.
 
 ---
 

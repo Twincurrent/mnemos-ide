@@ -32,6 +32,8 @@ test = false
 # Mnemos IDE integration: its project store is the source of truth for the
 # session list shown in Warp's left sidebar.
 mnemos-ide-agent-restore = { path = "../ide/mnemos-ide-agent-restore" }
+mnemos-ide-team = { path = "../ide/mnemos-ide-team" }
+prevent_sleep.workspace = true
 mnemos-ide-agents = { path = "../ide/mnemos-ide-agents" }
 mnemos-ide-core = { path = "../ide/mnemos-ide-core" }
 mnemos-ide-git-tree = { path = "../ide/mnemos-ide-git-tree" }

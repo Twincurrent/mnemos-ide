@@ -58,7 +58,9 @@ jobs:
           fi
 
       - name: Claude Code plugin tests
-        run: bash ide/claude-plugin/tests/background-tasks.sh
+        run: |
+          bash ide/claude-plugin/tests/background-tasks.sh
+          bash ide/claude-plugin/tests/team-context.sh
 
       - name: cargo-deny (licenses, sources, bans)
         uses: EmbarkStudios/cargo-deny-action@v2

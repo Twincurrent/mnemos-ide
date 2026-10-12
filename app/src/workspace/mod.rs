@@ -19,6 +19,8 @@ pub mod rewind_confirmation_dialog;
 pub mod sync_inputs;
 pub mod tab_settings;
 pub(crate) mod ide_sync;
+#[cfg(not(target_family = "wasm"))]
+pub(crate) mod team_control;
 mod toast_stack;
 pub mod util;
 pub mod view;

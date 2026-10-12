@@ -482,6 +482,14 @@ impl TerminalManager {
                 OsString::from(CLI_AGENT_TOKEN_ENV_VAR),
                 OsString::from(&token),
             );
+            // Mnemos IDE: where the mnemos-team plugin finds the team MCP
+            // server; the token above is its bearer credential.
+            if let Some(url) = crate::workspace::team_control::mcp_url() {
+                env_vars.insert(
+                    OsString::from(crate::workspace::team_control::MCP_URL_ENV),
+                    OsString::from(url),
+                );
+            }
             model.lock().set_cli_agent_event_token(token.clone());
             CLIAgentEventFileIngestor::handle(ctx).update(ctx, |ingestor, ctx| {
                 ingestor.register(token, terminal_view_id, ctx);

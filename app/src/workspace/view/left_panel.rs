@@ -579,6 +579,21 @@ impl LeftPanelView {
         view.update(ctx, |panel, vctx| panel.set_session_groups(groups, vctx));
     }
 
+    /// The active project's root the Agents panel was last given.
+    pub fn agents_active_project_path(&self, ctx: &AppContext) -> String {
+        self.agents_view.as_ref(ctx).active_project_path().to_string()
+    }
+
+    /// The active project's team board rows, for the Agents panel's TEAM section.
+    pub fn set_team_board(
+        &mut self,
+        rows: Vec<mnemos_ide_agents::TeamRow>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let view = self.agents_view.clone();
+        view.update(ctx, |panel, vctx| panel.set_team_board(rows, vctx));
+    }
+
     /// Move the Agents panel's session ages on (see the workspace's sessions tick).
     pub fn repaint_session_ages(&mut self, ctx: &mut ViewContext<Self>) {
         let view = self.agents_view.clone();

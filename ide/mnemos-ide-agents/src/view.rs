@@ -75,7 +75,7 @@ use mnemos_ui_core::{
 
 use crate::types::{
     is_remote_control_url, AgentKind, AgentRow, AgentStatus, PluginHint, PluginHintSeverity,
-    RemoteMachine, SessionGroup, SessionRow, SessionState,
+    RemoteMachine, SessionGroup, SessionRow, SessionState, TeamRow,
 };
 
 const ROW_H_PAD: f32 = 10.0;
@@ -200,6 +200,8 @@ pub struct AgentsPanel {
     suggesting: HashMap<u64, SuggestState>,
     /// The user's other machines and their agents.
     remote: Vec<RemoteMachine>,
+    /// The active project's team board; shown as TEAM when not empty.
+    team: Vec<TeamRow>,
     /// Mouse state for the "open" pill on remote rows, by Remote Control
     /// URL (remote ids are list positions; the URL is unique per session).
     open_handles: HashMap<String, MouseStateHandle>,
@@ -244,6 +246,7 @@ impl AgentsPanel {
             suggest_handles: HashMap::new(),
             suggesting: HashMap::new(),
             remote: Vec::new(),
+            team: Vec::new(),
             open_handles: HashMap::new(),
             last_group: HashMap::new(),
             unseen: HashSet::new(),
@@ -280,6 +283,20 @@ impl AgentsPanel {
             return;
         }
         self.active_project_path = path;
+        ctx.notify();
+    }
+
+    /// The active project's root, as last set.
+    pub fn active_project_path(&self) -> &str {
+        &self.active_project_path
+    }
+
+    /// Replace the team board rows (the active project's `team.sh` board).
+    pub fn set_team_board(&mut self, rows: Vec<TeamRow>, ctx: &mut ViewContext<Self>) {
+        if self.team == rows {
+            return;
+        }
+        self.team = rows;
         ctx.notify();
     }
 
@@ -561,6 +578,12 @@ impl View for AgentsPanel {
                 column.add_child(self.render_row(None, &machine.rows[idx], now, &style));
             }
         }
+        if !self.team.is_empty() {
+            column.add_child(self.render_section("TEAM", self.team.len(), &style));
+            for row in &self.team {
+                column.add_child(self.render_team_row(row, &style));
+            }
+        }
         self.render_sessions(&mut column, now, &style);
         ClippedScrollable::vertical(
             self.scroll_state.clone(),
@@ -628,6 +651,24 @@ impl AgentsPanel {
             .with_horizontal_padding(4.0)
             .with_padding_top(2.0)
             .with_padding_bottom(6.0)
+            .finish()
+    }
+
+    /// One team board row: name, state, then task and SHA, dimmer.
+    fn render_team_row(&self, row: &TeamRow, style: &PanelStyle) -> Box<dyn Element> {
+        let detail: Vec<&str> = [row.task.as_deref(), row.sha.as_deref()].into_iter().flatten().collect();
+        let mut line = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(6.0)
+            .with_child(self.text(row.name.clone(), style.font_size - 1.0, style.fg_60, Weight::Semibold))
+            .with_child(self.text(row.state.clone(), style.font_size - 1.0, style.fg_60, Weight::Normal));
+        if !detail.is_empty() {
+            line.add_child(self.text(detail.join(" · "), style.font_size - 2.0, style.fg_40, Weight::Normal));
+        }
+        Container::new(line.finish())
+            .with_horizontal_padding(6.0)
+            .with_padding_top(1.0)
+            .with_padding_bottom(1.0)
             .finish()
     }
 

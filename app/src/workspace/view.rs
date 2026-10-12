@@ -10,6 +10,7 @@ mod startup_directory;
 // Mnemos IDE: the agents panel's "Suggest", run through the local claude CLI.
 mod agent_suggest;
 mod ide_sessions;
+mod ide_team;
 mod ide_sync_auth_chip;
 mod ide_tab_sync;
 #[cfg(test)]
