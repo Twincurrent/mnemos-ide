@@ -22,6 +22,16 @@ RULES="$TEAM_DIR/rules.md"
 BOARD="$TEAM_DIR/board.json"
 [ -f "$RULES" ] || [ -f "$BOARD" ] || exit 0
 
+# The team.sh sessions should run: the installed copy of this plugin version
+# when there is one (a directory marketplace can run hooks from the source
+# checkout, which may be on another branch), else this script's own.
+TEAM_SH="$SCRIPT_DIR/team.sh"
+VERSION=$(jq -r '.version // empty' "$SCRIPT_DIR/../.claude-plugin/plugin.json" 2>/dev/null)
+INSTALLED="${HOME}/.claude/plugins/cache/mnemos/mnemos-agents/${VERSION}/scripts/team.sh"
+if [ -n "$VERSION" ] && [ -f "$INSTALLED" ]; then
+    TEAM_SH="$INSTALLED"
+fi
+
 RULES_SUM=$(mnemos_team_sum "$RULES")
 BOARD_SUM=$(mnemos_team_sum "$BOARD")
 SEEN_FILE="$TEAM_DIR/seen/$SESSION"
@@ -47,7 +57,7 @@ if [ -n "$BOARD_SUM" ] && [ "$BOARD_SUM" != "$SEEN_BOARD" ]; then
         "- \(.key): \(.value.state // "?")\(if .value.task then " | \(.value.task)" else "" end)\(if .value.sha then " | sha \(.value.sha)" else "" end) (\(.value.updated // "?"))"' \
         "$BOARD" 2>/dev/null | head -n 40)
     if [ -n "$LINES" ]; then
-        CONTEXT+="Team board (${BOARD}). Update your own row with: bash \"${SCRIPT_DIR}/team.sh\" set <your name> <state> [task] [sha]"$'\n'
+        CONTEXT+="Team board (${BOARD}). Update your own row with: bash \"${TEAM_SH}\" set <your name> <state> [task] [sha]"$'\n'
         CONTEXT+="$LINES"$'\n'
     fi
 fi

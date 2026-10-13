@@ -153,6 +153,12 @@ pub fn ide_agent_sessions_file() -> Result<PathBuf, IdeError> {
     Ok(ide_store_dir()?.join("agent_sessions.json"))
 }
 
+/// The team sessions a coordinator spawned, by pane uuid, so their names and
+/// worktrees survive an app restart (`app/src/workspace/team_control.rs`).
+pub fn ide_team_sessions_file() -> Result<PathBuf, IdeError> {
+    Ok(ide_store_dir()?.join("team_sessions.json"))
+}
+
 /// True when [`ide_data_dir`] is redirected away from the platform default,
 /// by [`override_data_dir`], [`MNEMOS_DATA_DIR_ENV`] or [`LEGACY_DATA_DIR_ENV`].
 /// Both variable names count, so a build started with only the old one still

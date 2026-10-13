@@ -111,7 +111,32 @@ struct Spawned {
     cwd: PathBuf,
     worktree: Option<PathBuf>,
     model: Option<String>,
+    /// MNEMOS_TEAM_DIR given to the session, when its directory is not the team's repository.
+    team_dir: Option<PathBuf>,
+    /// Persistent pane uuids, so the session is known again after an app restart.
+    pane_uuid: Option<String>,
+    coordinator_uuid: Option<String>,
 }
+
+/// A spawned session as `store/team_sessions.json` keeps it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct SavedSpawn {
+    pane_uuid: String,
+    #[serde(default)]
+    coordinator_uuid: Option<String>,
+    name: String,
+    cwd: PathBuf,
+    #[serde(default)]
+    worktree: Option<PathBuf>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    team_dir: Option<PathBuf>,
+}
+
+/// How long after launch saved sessions may still turn up (agent restore
+/// brings panes back in the first seconds); unresolved ones are dropped after.
+const ADOPT_WINDOW: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// A spawn waiting for the user to allow its coordinator.
 struct PendingSpawn {
@@ -130,6 +155,11 @@ pub(crate) struct TeamControl {
     leases: LeaseTable,
     /// Held while any agent works and `agents.team.keep_awake` is on.
     awake: Option<prevent_sleep::Guard>,
+    /// Sessions saved by an earlier run whose panes have not been matched yet.
+    unbound: Vec<SavedSpawn>,
+    started: instant::Instant,
+    /// The team dir each coordinator last passed, reused when it passes none.
+    team_dirs: HashMap<EntityId, PathBuf>,
 }
 
 impl Entity for TeamControl {
@@ -149,6 +179,9 @@ impl TeamControl {
             limiter: SpawnLimiter::default(),
             leases: LeaseTable::default(),
             awake: None,
+            unbound: load_saved(),
+            started: instant::Instant::now(),
+            team_dirs: HashMap::new(),
         };
         ctx.subscribe_to_model(&CLIAgentSessionsModel::handle(ctx), |me, _, ctx| me.update_awake(ctx));
         ctx.subscribe_to_model(&TeamSettings::handle(ctx), |me, _, ctx| me.update_awake(ctx));
@@ -220,6 +253,7 @@ impl TeamControl {
         reply: oneshot::Sender<Reply>,
         ctx: &mut ModelContext<Self>,
     ) {
+        self.adopt(ctx);
         self.forget_closed(ctx);
         if let ToolCall::Spawn { .. } = call {
             self.spawn_or_ask(caller, id, call, reply, ctx);
@@ -350,7 +384,7 @@ impl TeamControl {
     }
 
     fn spawn(&mut self, caller: EntityId, call: ToolCall, ctx: &mut ModelContext<Self>) -> Result<String, String> {
-        let ToolCall::Spawn { name, brief, model, cwd, worktree_branch, worktree_base } = call else {
+        let ToolCall::Spawn { name, brief, model, cwd, worktree_branch, worktree_base, team_dir } = call else {
             return Err("not a spawn".into());
         };
         validate_name(&name).map_err(|e| e.to_string())?;
@@ -387,14 +421,42 @@ impl TeamControl {
             }
         };
 
+        // A session outside the team's repository finds rules.md and the board
+        // only through MNEMOS_TEAM_DIR: the one passed, else the last one this
+        // coordinator passed.
+        let in_repo = worktree::team_dir_of(&directory).is_some();
+        let team_dir = match team_dir {
+            Some(dir) => {
+                let dir = PathBuf::from(dir);
+                if !dir.is_absolute() || !dir.is_dir() {
+                    return Err(format!("team_dir {} is not an existing absolute directory", dir.display()));
+                }
+                self.team_dirs.insert(caller, dir.clone());
+                Some(dir)
+            }
+            None if !in_repo => self.team_dirs.get(&caller).cloned(),
+            None => None,
+        };
+        let team_note = match (&team_dir, in_repo) {
+            (Some(dir), _) => format!(" It reads team rules and the board from {}.", dir.display()),
+            (None, true) => String::new(),
+            (None, false) => format!(
+                " Note: {} is not in a git repository, so this session gets no team rules or board; pass team_dir (e.g. <repo>/.git/mnemos-team).",
+                directory.display()
+            ),
+        };
+
         let powershell = with_workspace_of(caller, ctx, |ws, wctx| ws.ide_team_is_powershell(caller, wctx)).unwrap_or(false);
         let family = if powershell { ShellFamily::PowerShell } else { ShellFamily::Posix };
         let command = spec.command_line(family);
-        let env: HashMap<OsString, OsString> = spec
+        let mut env: HashMap<OsString, OsString> = spec
             .env(&brief)
             .into_iter()
             .map(|(k, v)| (OsString::from(k), OsString::from(v)))
             .collect();
+        if let Some(dir) = &team_dir {
+            env.insert(OsString::from("MNEMOS_TEAM_DIR"), dir.clone().into_os_string());
+        }
 
         let view = with_workspace_of(caller, ctx, |ws, wctx| {
             ws.ide_team_split(caller, directory.clone(), env, &command, &name, wctx)
@@ -402,6 +464,8 @@ impl TeamControl {
         .flatten()
         .ok_or("could not open a pane next to yours")?;
 
+        let pane_uuid = with_workspace_of_ref(view, ctx, |ws| ws.ide_team_pane_uuid(view, ctx)).flatten();
+        let coordinator_uuid = with_workspace_of_ref(caller, ctx, |ws| ws.ide_team_pane_uuid(caller, ctx)).flatten();
         self.spawned.push(Spawned {
             name: name.clone(),
             view,
@@ -409,7 +473,11 @@ impl TeamControl {
             cwd: directory.clone(),
             worktree: worktree_path.clone(),
             model: model.clone(),
+            team_dir: team_dir.clone(),
+            pane_uuid,
+            coordinator_uuid,
         });
+        self.save();
         log::info!(target: "mnemos_ide_team", "spawned {name} in {} (terminal {view:?}, bypass {skip_permissions})", directory.display());
         if let Some(window) = window_of(view, ctx) {
             let text = format!("Started team session \"{name}\"{}", if skip_permissions { " (skipping permission prompts)" } else { "" });
@@ -418,7 +486,7 @@ impl TeamControl {
             });
         }
         Ok(format!(
-            "spawned {name} in {}{}. Its first prompt is your brief. Message it with SendMessage once it is listed by ListAgents.",
+            "spawned {name} in {}{}. Its first prompt is your brief. Message it with SendMessage once it is listed by ListAgents.{team_note}",
             directory.display(),
             worktree_path.map(|p| format!(" (worktree {})", p.display())).unwrap_or_default(),
         ))
@@ -476,6 +544,7 @@ impl TeamControl {
         if let Some(s) = self.spawned.iter_mut().find(|s| s.view == view) {
             s.name = new_name.to_string();
         }
+        self.save();
         Ok(format!("renamed {name} to {new_name} (its Claude session keeps its own /rename name)"))
     }
 
@@ -603,6 +672,87 @@ impl TeamControl {
     fn close(&mut self, view: EntityId, ctx: &mut ModelContext<Self>) {
         with_workspace_of(view, ctx, |ws, wctx| ws.ide_team_close(view, wctx));
         self.spawned.retain(|s| s.view != view);
+        self.save();
+    }
+
+    /// Matches sessions saved by an earlier run to the panes agent restore
+    /// brought back, by pane uuid. Unmatched ones are kept for the first
+    /// [`ADOPT_WINDOW`] after launch and dropped after that.
+    fn adopt(&mut self, ctx: &mut ModelContext<Self>) {
+        if self.unbound.is_empty() {
+            return;
+        }
+        let find = |uuid: &str, ctx: &AppContext| {
+            WorkspaceRegistry::as_ref(ctx)
+                .all_workspaces(ctx)
+                .into_iter()
+                .find_map(|(_, ws)| ws.as_ref(ctx).ide_team_view_for_uuid(uuid, ctx))
+        };
+        let mut still = Vec::new();
+        for saved in std::mem::take(&mut self.unbound) {
+            let Some(view) = find(&saved.pane_uuid, ctx) else {
+                still.push(saved);
+                continue;
+            };
+            let coordinator = saved
+                .coordinator_uuid
+                .as_deref()
+                .and_then(|uuid| find(uuid, ctx))
+                .unwrap_or(view);
+            log::info!(target: "mnemos_ide_team", "found {} again after a restart (terminal {view:?})", saved.name);
+            with_workspace_of(view, ctx, |ws, wctx| ws.ide_team_set_title(view, &saved.name, wctx));
+            if let Some(dir) = &saved.team_dir {
+                self.team_dirs.entry(coordinator).or_insert_with(|| dir.clone());
+            }
+            self.spawned.push(Spawned {
+                name: saved.name,
+                view,
+                coordinator,
+                cwd: saved.cwd,
+                worktree: saved.worktree,
+                model: saved.model,
+                team_dir: saved.team_dir,
+                pane_uuid: Some(saved.pane_uuid),
+                coordinator_uuid: saved.coordinator_uuid,
+            });
+        }
+        if self.started.elapsed() < ADOPT_WINDOW {
+            self.unbound = still;
+        } else if !still.is_empty() {
+            log::info!(target: "mnemos_ide_team", "dropped {} saved session(s) whose panes did not come back", still.len());
+        }
+        self.save();
+    }
+
+    /// Writes the spawned sessions (and any not matched yet) to the store.
+    fn save(&self) {
+        let mut saved: Vec<SavedSpawn> = self
+            .spawned
+            .iter()
+            .filter_map(|s| {
+                Some(SavedSpawn {
+                    pane_uuid: s.pane_uuid.clone()?,
+                    coordinator_uuid: s.coordinator_uuid.clone(),
+                    name: s.name.clone(),
+                    cwd: s.cwd.clone(),
+                    worktree: s.worktree.clone(),
+                    model: s.model.clone(),
+                    team_dir: s.team_dir.clone(),
+                })
+            })
+            .collect();
+        saved.extend(self.unbound.iter().cloned());
+        let Ok(path) = mnemos_ide_core::paths::ide_team_sessions_file() else {
+            return;
+        };
+        let tmp = path.with_extension("json.tmp");
+        let written = serde_json::to_vec_pretty(&saved)
+            .map_err(std::io::Error::other)
+            .and_then(|bytes| std::fs::write(&tmp, bytes))
+            .and_then(|()| std::fs::rename(&tmp, &path));
+        if let Err(err) = written {
+            log::warn!(target: "mnemos_ide_team", "could not save team sessions: {err}");
+        }
     }
 
     /// Drops spawned sessions whose pane is gone, approvals of closed panes,
@@ -612,7 +762,11 @@ impl TeamControl {
         self.leases.purge(instant::Instant::now(), |holder| {
             alive(EntityId::from_usize(holder as usize))
         });
+        let before = self.spawned.len();
         self.spawned.retain(|s| alive(s.view));
+        if self.spawned.len() != before {
+            self.save();
+        }
         self.allowed.retain(|v| alive(*v));
         self.denied.retain(|v| alive(*v));
     }
@@ -620,6 +774,15 @@ impl TeamControl {
     fn repo_of(&self, caller: EntityId, ctx: &ModelContext<Self>) -> Option<PathBuf> {
         caller_cwd(caller, ctx).and_then(|cwd| worktree::toplevel(&cwd).ok())
     }
+}
+
+/// Sessions an earlier run saved; empty when there is no file or it is unreadable.
+fn load_saved() -> Vec<SavedSpawn> {
+    mnemos_ide_core::paths::ide_team_sessions_file()
+        .ok()
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
 }
 
 fn text_result(wrap: impl FnOnce(String, bool) -> Reply, result: Result<String, String>) -> Reply {

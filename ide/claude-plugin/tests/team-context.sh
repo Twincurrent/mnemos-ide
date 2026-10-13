@@ -69,6 +69,15 @@ check "remove drops a row" "$([ "$(cd "$REPO" && bash "$SCRIPTS/team.sh" board |
 out=$(hook UserPromptSubmit '../evil' "$REPO")
 check "a session id with a path is ignored" "$([ -z "$out" ] && [ ! -e "$dir_main/evil" ]; echo $?)"
 
+VER=$(jq -r .version "$SCRIPTS/../.claude-plugin/plugin.json")
+FAKEHOME="$WORK/home"
+mkdir -p "$FAKEHOME/.claude/plugins/cache/mnemos/mnemos-agents/$VER/scripts"
+touch "$FAKEHOME/.claude/plugins/cache/mnemos/mnemos-agents/$VER/scripts/team.sh"
+(cd "$REPO" && bash "$SCRIPTS/team.sh" set hinter idle) || FAIL=1
+out=$(HOME="$FAKEHOME" hook UserPromptSubmit s1 "$REPO" | ctx)
+check "board hint names the installed team.sh" \
+    "$(grep -q "$FAKEHOME/.claude/plugins/cache/mnemos/mnemos-agents/$VER/scripts/team.sh" <<< "$out"; echo $?)"
+
 out=$(hook UserPromptSubmit s9 "$WORK")
 check "silent outside a git repository" "$([ -z "$out" ]; echo $?)"
 

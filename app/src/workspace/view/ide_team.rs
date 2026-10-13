@@ -46,6 +46,22 @@ impl Workspace {
             .and_then(|view| view.as_ref(ctx).active_session_path_if_local(ctx))
     }
 
+    /// Terminal `view_id`'s persistent pane uuid (hex), the key that survives a restart.
+    pub(crate) fn ide_team_pane_uuid(&self, view_id: EntityId, ctx: &AppContext) -> Option<String> {
+        self.ide_terminal_panes_by_uuid(ctx)
+            .into_iter()
+            .find(|(_, view)| view.id() == view_id)
+            .map(|(uuid, _)| uuid)
+    }
+
+    /// The terminal view of the pane with persistent uuid `uuid`, if this window has it.
+    pub(crate) fn ide_team_view_for_uuid(&self, uuid: &str, ctx: &AppContext) -> Option<EntityId> {
+        self.ide_terminal_panes_by_uuid(ctx)
+            .into_iter()
+            .find(|(hex, _)| hex == uuid)
+            .map(|(_, view)| view.id())
+    }
+
     /// Whether terminal `view_id` runs PowerShell (quoting differs).
     pub(crate) fn ide_team_is_powershell(&self, view_id: EntityId, ctx: &AppContext) -> bool {
         let Some(index) = self.ide_team_tab_of(view_id, ctx) else {

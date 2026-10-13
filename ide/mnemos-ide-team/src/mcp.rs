@@ -86,6 +86,7 @@ pub enum ToolCall {
         cwd: Option<String>,
         worktree_branch: Option<String>,
         worktree_base: Option<String>,
+        team_dir: Option<String>,
     },
     List,
     Focus { name: String },
@@ -130,6 +131,7 @@ pub fn parse_tool_call(params: &Value) -> Result<ToolCall, String> {
             cwd: arg_str(args, "cwd"),
             worktree_branch: arg_str(args, "worktree_branch"),
             worktree_base: arg_str(args, "worktree_base"),
+            team_dir: arg_str(args, "team_dir"),
         },
         "list_sessions" => ToolCall::List,
         "focus_session" => ToolCall::Focus {
@@ -182,6 +184,7 @@ pub fn tools_list() -> Value {
                 "cwd": { "type": "string", "description": "Absolute directory to start in. Default: your current directory. Ignored with worktree_branch." },
                 "worktree_branch": { "type": "string", "description": "Create a git worktree on this branch for the session." },
                 "worktree_base": { "type": "string", "description": "Branch or commit a new worktree branch starts from. Default: origin/HEAD, main or master." },
+                "team_dir": { "type": "string", "description": "Absolute team directory (rules.md, board.json) for a session whose directory is not inside the team's git repository, e.g. <repo>/.git/mnemos-team. The session gets it as MNEMOS_TEAM_DIR. Default: the last one you passed, else the repository's own." },
             }),
             &["name", "brief"]),
         tool("list_sessions",
@@ -254,6 +257,7 @@ mod tests {
                 cwd: None,
                 worktree_branch: None,
                 worktree_base: None,
+                team_dir: None,
             }
         );
         assert_eq!(
