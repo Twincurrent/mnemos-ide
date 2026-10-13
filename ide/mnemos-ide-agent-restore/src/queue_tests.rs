@@ -15,6 +15,7 @@ fn entry(pane: &str, session: &str) -> SessionEntry {
         cwd: None,
         agent: "Claude".to_owned(),
         last_live_unix: None,
+        skip_permissions: false,
     }
 }
 

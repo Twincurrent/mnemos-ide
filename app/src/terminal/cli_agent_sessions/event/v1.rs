@@ -64,6 +64,10 @@ pub(super) fn parse(body: &str) -> Option<CLIAgentEvent> {
                 .as_ref()
                 .and_then(serde_json::Value::as_u64)
                 .map(|n| n.min(u32::MAX as u64) as u32),
+            bypass_permissions: raw
+                .permission_mode
+                .as_deref()
+                .map(|mode| mode == "bypassPermissions"),
         },
     })
 }
@@ -85,6 +89,7 @@ struct RawEvent {
     plugin_version: Option<String>,
     remote_url: Option<String>,
     background_tasks: Option<serde_json::Value>,
+    permission_mode: Option<String>,
 }
 
 /// Text Claude Code injects as a user turn on the agent's behalf: background task

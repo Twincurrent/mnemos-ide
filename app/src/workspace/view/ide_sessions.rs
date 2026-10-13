@@ -476,9 +476,9 @@ pub(super) fn resume_tab(
 /// passed `is_safe_session_id` (hex and dashes), so no shell needs quoting.
 pub(super) fn resume_command(session_id: &str, fork: bool) -> String {
     if fork {
-        mnemos_ide_agent_restore::fork_command(session_id)
+        mnemos_ide_agent_restore::fork_command(session_id, false)
     } else {
-        mnemos_ide_agent_restore::resume_command(session_id)
+        mnemos_ide_agent_restore::resume_command(session_id, false)
     }
 }
 

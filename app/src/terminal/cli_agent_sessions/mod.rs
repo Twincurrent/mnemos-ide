@@ -58,6 +58,12 @@ pub struct CLIAgentSessionContext {
     /// `Stop`, cleared when a new turn starts. Nonzero keeps the session
     /// `InProgress` instead of `Success`.
     pub background_tasks: u32,
+    /// The session reported `bypassPermissions` at least once. Claude Code
+    /// only offers that mode to a session started with
+    /// `--dangerously-skip-permissions` (or its `--allow-` variant), so this
+    /// stays set while the user cycles to another mode, and agent restore
+    /// starts the session the same way again.
+    pub bypass_permissions: bool,
 }
 
 /// State of the rich input editor for composing a prompt to send to a CLI agent.
@@ -176,6 +182,9 @@ impl CLIAgentSession {
             .or(self.session_context.session_id.take());
         if let Some(url) = &event.payload.remote_url {
             self.session_context.remote_url = Some(url.clone());
+        }
+        if event.payload.bypass_permissions == Some(true) {
+            self.session_context.bypass_permissions = true;
         }
 
         let new_status = match &event.event {

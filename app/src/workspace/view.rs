@@ -3768,6 +3768,7 @@ impl Workspace {
                     cwd: session.session_context.cwd.as_deref().map(PathBuf::from),
                     agent: session.agent.to_serialized_name(),
                     last_live_unix: None,
+                    skip_permissions: session.session_context.bypass_permissions,
                 })
             })
             .collect()
@@ -3934,7 +3935,7 @@ impl Workspace {
                         "restoring claude session {id} into pane {}",
                         entry.pane_uuid_hex,
                     );
-                    mnemos_ide_agent_restore::resume_command(&id)
+                    mnemos_ide_agent_restore::resume_command(&id, entry.skip_permissions)
                 }
                 mnemos_ide_agent_restore::ResumeMode::Fork => {
                     log::info!(
@@ -3942,7 +3943,7 @@ impl Workspace {
                         "restoring a fork of claude session {id} into pane {}: another machine may be running it (agents-live: {live:?}, newest turn: {newest:?})",
                         entry.pane_uuid_hex,
                     );
-                    mnemos_ide_agent_restore::fork_command(&id)
+                    mnemos_ide_agent_restore::fork_command(&id, entry.skip_permissions)
                 }
             };
             decided.push((entry, view, command));

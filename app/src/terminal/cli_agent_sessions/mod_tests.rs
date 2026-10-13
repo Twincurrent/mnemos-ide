@@ -854,6 +854,39 @@ fn remote_url_sticks_until_replaced() {
     assert_eq!(session.session_context.remote_url.as_ref(), Some(&second));
 }
 
+#[test]
+fn bypass_permissions_parses_and_sticks() {
+    let body = r#"{"v":1,"agent":"claude","event":"prompt_submit","permission_mode":"bypassPermissions"}"#;
+    let notif = parse_event(Some("mnemos://cli-agent"), body).unwrap();
+    assert_eq!(notif.payload.bypass_permissions, Some(true));
+    let body = r#"{"v":1,"agent":"claude","event":"prompt_submit","permission_mode":"auto"}"#;
+    let notif = parse_event(Some("mnemos://cli-agent"), body).unwrap();
+    assert_eq!(notif.payload.bypass_permissions, Some(false));
+    let body = r#"{"v":1,"agent":"claude","event":"session_start"}"#;
+    let notif = parse_event(Some("mnemos://cli-agent"), body).unwrap();
+    assert_eq!(notif.payload.bypass_permissions, None);
+
+    let mut session = claude_session(CLIAgentSessionStatus::InProgress);
+    assert!(!session.session_context.bypass_permissions);
+    let with = |mode: Option<bool>| {
+        claude_event(
+            CLIAgentEventType::PromptSubmit,
+            CLIAgentEventPayload {
+                bypass_permissions: mode,
+                ..Default::default()
+            },
+        )
+    };
+    session.apply_event(&with(Some(false)));
+    assert!(!session.session_context.bypass_permissions);
+    session.apply_event(&with(Some(true)));
+    assert!(session.session_context.bypass_permissions);
+    // Cycling to another mode (shift-tab) keeps it: the session was started
+    // with bypass, and a restore should start it that way again.
+    session.apply_event(&with(Some(false)));
+    assert!(session.session_context.bypass_permissions);
+}
+
 /// Regression: any output in a pane (`cat` of a file, a remote host, curl)
 /// could print `ESC ] 777 ; notify ; mnemos://cli-agent ; {...}` and create
 /// phantom agent sessions. Only titles with this PTY's token are trusted.

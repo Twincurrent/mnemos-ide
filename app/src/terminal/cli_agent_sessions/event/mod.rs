@@ -225,6 +225,10 @@ pub struct CLIAgentEventPayload {
     /// the transcript shows as started and not yet finished. `None` from
     /// plugins that predate the field.
     pub background_tasks: Option<u32>,
+    /// Whether the session runs with permission checks bypassed, from the
+    /// hook's `permission_mode`. `None` when the event carries no mode
+    /// (SessionStart, or a plugin older than mnemos-agents 1.3.2).
+    pub bypass_permissions: Option<bool>,
 }
 
 /// A parsed event from a CLI agent plugin.

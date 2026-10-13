@@ -60,6 +60,13 @@ pub struct SessionEntry {
     /// the other machine's (`crate::guard::resume_mode`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_live_unix: Option<u64>,
+    /// The session ran with permission checks bypassed (it was started with
+    /// `--dangerously-skip-permissions`), so it is resumed with that flag
+    /// again instead of in the user's default permission mode. Only ever
+    /// set from the pane's own token-checked hook events, and this file
+    /// never syncs.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skip_permissions: bool,
 }
 
 /// Everything worth replaying from the previous run.
@@ -351,16 +358,22 @@ fn launch_dir(transcript: &Path) -> Option<PathBuf> {
 /// Deliberately **not** `--fork-session`: the point of restoring after an
 /// update is to continue the same thread, not to branch it, unless another
 /// machine may be running it ([`crate::guard`], then [`fork_command`]).
+/// With `skip_permissions` it adds `--dangerously-skip-permissions`, for a
+/// session that was started with it ([`SessionEntry::skip_permissions`]).
 /// Callers must have checked [`is_safe_session_id`]; [`RestoreSnapshot::resumable`] does.
-pub fn resume_command(session_id: &str) -> String {
-    format!("claude --resume {session_id}")
+pub fn resume_command(session_id: &str, skip_permissions: bool) -> String {
+    if skip_permissions {
+        format!("claude --resume {session_id} --dangerously-skip-permissions")
+    } else {
+        format!("claude --resume {session_id}")
+    }
 }
 
 /// The command that resumes a fork of `session_id`: a copy with a new id and
 /// its own Remote Control session, which takes nothing over from a process
 /// on another machine. Same precondition as [`resume_command`].
-pub fn fork_command(session_id: &str) -> String {
-    format!("{} --fork-session", resume_command(session_id))
+pub fn fork_command(session_id: &str, skip_permissions: bool) -> String {
+    format!("{} --fork-session", resume_command(session_id, skip_permissions))
 }
 
 /// The length and mtime of the transcript [`RestoreSnapshot::resumable`]

@@ -124,10 +124,14 @@ mnemos_build_payload() {
     if [ "$declared" -lt "$MNEMOS_PLUGIN_PROTOCOL_VERSION" ] 2>/dev/null; then
         v="$declared"
     fi
-    local session_id cwd project=""
+    local session_id cwd project="" mode
     session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
     cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
     [ -n "$cwd" ] && project=$(basename "$cwd")
+    # The session's permission mode, so a restore can start it the same way
+    # (Claude Code sends it with most hooks, not with SessionStart).
+    mode=$(printf '%s' "$input" | jq -r '.permission_mode // empty | select(test("^[A-Za-z]{1,32}$"))' 2>/dev/null)
+    [ -n "$mode" ] && set -- "$@" --arg permission_mode "$mode"
     jq -nc \
         --argjson v "$v" \
         --arg agent "claude" \

@@ -20,6 +20,7 @@ fn entry(pane: &str, session: &str, cwd: Option<PathBuf>) -> SessionEntry {
         cwd,
         agent: "Claude".to_owned(),
         last_live_unix: None,
+        skip_permissions: false,
     }
 }
 
@@ -457,7 +458,7 @@ fn full_round_trip_from_shutdown_to_resume() {
     assert_eq!(resumable.len(), 1);
     assert_eq!(resumable[0].pane_uuid_hex, "pane-a");
     assert_eq!(
-        resume_command(&resumable[0].session_id),
+        resume_command(&resumable[0].session_id, false),
         format!("claude --resume {UUID_A}")
     );
     assert!(!path.exists());
@@ -465,15 +466,39 @@ fn full_round_trip_from_shutdown_to_resume() {
 
 #[test]
 fn resume_command_continues_rather_than_forks() {
-    let command = resume_command(UUID_A);
+    let command = resume_command(UUID_A, false);
     assert_eq!(command, format!("claude --resume {UUID_A}"));
     assert!(!command.contains("--fork-session"));
 }
 
 #[test]
+fn a_bypassed_session_is_resumed_bypassed() {
+    assert_eq!(
+        resume_command(UUID_A, true),
+        format!("claude --resume {UUID_A} --dangerously-skip-permissions")
+    );
+    assert_eq!(
+        fork_command(UUID_A, true),
+        format!("claude --resume {UUID_A} --dangerously-skip-permissions --fork-session")
+    );
+}
+
+#[test]
+fn skip_permissions_round_trips_and_defaults_off() {
+    let mut e = entry("pane-a", UUID_A, None);
+    let json = serde_json::to_string(&e).unwrap();
+    assert!(!json.contains("skip_permissions"), "{json}");
+    let old: SessionEntry = serde_json::from_str(&json).unwrap();
+    assert!(!old.skip_permissions);
+    e.skip_permissions = true;
+    let back: SessionEntry = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+    assert!(back.skip_permissions);
+}
+
+#[test]
 fn fork_command_forks_the_same_session() {
     assert_eq!(
-        fork_command(UUID_A),
+        fork_command(UUID_A, false),
         format!("claude --resume {UUID_A} --fork-session")
     );
 }

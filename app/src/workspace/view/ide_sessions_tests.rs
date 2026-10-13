@@ -380,6 +380,7 @@ fn only_a_launched_in_place_resume_forgets_the_carried_over_restore() {
         cwd: None,
         agent: "Claude".into(),
         last_live_unix: Some(1),
+        skip_permissions: false,
     });
     assert!(kept());
     note_resumed_from_list(sid, true, true);

@@ -61,6 +61,25 @@ check "compact keeps tasks"                2 "$BASH_BG" "$AGENT" "$COMPACT"
 check "mere mentions change nothing"       2 "$BASH_BG" "$AGENT" "$MENTION"
 check "half-written last line is skipped"  1 "$BASH_BG" '{"type":"user","toolUse'
 
+mode() {
+    jq -nc --arg m "$1" '{session_id: "s", cwd: "/tmp/p", prompt: "hi", permission_mode: $m}' \
+        | bash "$WORK/on-prompt-submit.sh" | jq -r '.permission_mode // "none"'
+}
+check_mode() {
+    local got
+    got=$(mode "$1")
+    if [ "$got" = "$2" ]; then
+        echo "ok   permission_mode $1 -> $got"
+    else
+        echo "FAIL permission_mode $1: want $2, got $got"
+        FAIL=1
+    fi
+}
+check_mode bypassPermissions bypassPermissions
+check_mode auto auto
+check_mode "" none
+check_mode 'x"; rm -rf /' none
+
 if [ $# -gt 0 ]; then
     echo "real transcript $1: background_tasks=$(count "$1")"
 fi

@@ -1,6 +1,6 @@
 {
   "name": "mnemos-agents",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Mnemos terminal integration. Streams Claude Code session lifecycle events to the Mnemos agents panel so a running `claude` shows its working directory, prompts, responses, and tool/permission state instead of appearing Unattached.",
   "author": {
     "name": "TwinCurrent",

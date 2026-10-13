@@ -117,7 +117,11 @@ cwd) in the local-only `store/agent_sessions.json` and resumes each in the same 
 launch. Consume-on-read, validated and capped, so a bad restore cannot loop. A session another
 machine may still be running comes back as a fork (`--fork-session`, a new id) instead, because a
 second `claude --resume` of one id takes that machine's Remote Control session over (code 4090).
-Signed in, the panes get their command once both the first live-agents answer and the first
+A session that ran with permission checks bypassed comes back with `--dangerously-skip-permissions`
+again (`SessionEntry::skip_permissions`): mnemos-agents 1.3.2 sends each hook's `permission_mode`,
+and a session that reported `bypassPermissions` once keeps the flag, since Claude Code only offers
+that mode to a session started with it. Without it a restored session would open in the user's
+default mode (`auto`, say) instead of the way it was started. Signed in, the panes get their command once both the first live-agents answer and the first
 transcript pull of the process are in (`SyncStatusSnapshot::first_transcript_pull_done`), at most
 10 s after the first restore of the process; signed out, at once (`live_agents_wanted` reads
 right away, it does not wait for the polling to start). Then `guard::resume_mode` forks when
