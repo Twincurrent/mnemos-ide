@@ -452,11 +452,12 @@ fn a_synced_session_lists_under_the_local_checkout() {
 #[test]
 fn the_resume_command_forks_only_when_asked() {
     let id = "c259d1fd-10fd-4517-b0c3-82a23ad52f64";
-    assert_eq!(resume_command(id, false), format!("claude --resume {id}"));
+    assert_eq!(resume_command("claude", id, false), format!("claude --resume {id}"));
     assert_eq!(
-        resume_command(id, true),
+        resume_command("claude", id, true),
         format!("claude --resume {id} --fork-session")
     );
+    assert_eq!(resume_command("cc", id, false), format!("cc --resume {id}"));
 }
 
 /// A nested project with more than [`PER_PROJECT`] newer sessions does not

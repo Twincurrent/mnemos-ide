@@ -353,6 +353,30 @@ fn launch_dir(transcript: &Path) -> Option<PathBuf> {
         .and_then(|meta| meta.cwd)
 }
 
+/// The program a resume starts when none is configured.
+pub const DEFAULT_CLAUDE_PROGRAM: &str = "claude";
+
+/// The longest [`claude_program`] accepts.
+pub const MAX_CLAUDE_PROGRAM_LEN: usize = 200;
+
+/// The program a resume types into the pane's shell, from the user's
+/// `agents.restore.claude_command` setting: an alias such as `cc`, or a
+/// command line such as `USE_BUILTIN_RIPGREP=0 claude`. The shell is the
+/// pane's own interactive one, so aliases and functions resolve. Anything
+/// blank, longer than [`MAX_CLAUDE_PROGRAM_LEN`] or with a character outside
+/// letters, digits, spaces and `_ . / ~ = : + , @ -` (no quotes, `$`, `;`,
+/// `|`, `&`, redirections or newlines) falls back to
+/// [`DEFAULT_CLAUDE_PROGRAM`].
+pub fn claude_program(configured: &str) -> &str {
+    let program = configured.trim();
+    let allowed = |c: char| c.is_ascii_alphanumeric() || " _./~=:+,@-".contains(c);
+    if program.is_empty() || program.len() > MAX_CLAUDE_PROGRAM_LEN || !program.chars().all(allowed) {
+        DEFAULT_CLAUDE_PROGRAM
+    } else {
+        program
+    }
+}
+
 /// The command that resumes `session_id` in place.
 ///
 /// Deliberately **not** `--fork-session`: the point of restoring after an
@@ -362,10 +386,17 @@ fn launch_dir(transcript: &Path) -> Option<PathBuf> {
 /// session that was started with it ([`SessionEntry::skip_permissions`]).
 /// Callers must have checked [`is_safe_session_id`]; [`RestoreSnapshot::resumable`] does.
 pub fn resume_command(session_id: &str, skip_permissions: bool) -> String {
-    if skip_permissions {
-        format!("claude --resume {session_id} --dangerously-skip-permissions")
+    resume_command_with(DEFAULT_CLAUDE_PROGRAM, session_id, skip_permissions)
+}
+
+/// [`resume_command`] starting `program` (already through [`claude_program`])
+/// instead of `claude`. The flag is not added twice when `program` has it.
+pub fn resume_command_with(program: &str, session_id: &str, skip_permissions: bool) -> String {
+    let program = claude_program(program);
+    if skip_permissions && !program.contains("--dangerously-skip-permissions") {
+        format!("{program} --resume {session_id} --dangerously-skip-permissions")
     } else {
-        format!("claude --resume {session_id}")
+        format!("{program} --resume {session_id}")
     }
 }
 
@@ -373,7 +404,12 @@ pub fn resume_command(session_id: &str, skip_permissions: bool) -> String {
 /// its own Remote Control session, which takes nothing over from a process
 /// on another machine. Same precondition as [`resume_command`].
 pub fn fork_command(session_id: &str, skip_permissions: bool) -> String {
-    format!("{} --fork-session", resume_command(session_id, skip_permissions))
+    fork_command_with(DEFAULT_CLAUDE_PROGRAM, session_id, skip_permissions)
+}
+
+/// [`fork_command`] starting `program`, as [`resume_command_with`].
+pub fn fork_command_with(program: &str, session_id: &str, skip_permissions: bool) -> String {
+    format!("{} --fork-session", resume_command_with(program, session_id, skip_permissions))
 }
 
 /// The length and mtime of the transcript [`RestoreSnapshot::resumable`]

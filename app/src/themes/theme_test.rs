@@ -126,7 +126,7 @@ const LEGACY_DARK: [ThemeKind; 14] = [
 
 /// Every built-in kind, in picker order: the Mnemos themes, the image themes, then the community
 /// themes alphabetically.
-const BUILT_IN_KINDS: [ThemeKind; 21] = [
+const BUILT_IN_KINDS: [ThemeKind; 31] = [
     ThemeKind::MnemosNight,
     ThemeKind::MnemosDay,
     ThemeKind::MnemosContrast,
@@ -136,18 +136,28 @@ const BUILT_IN_KINDS: [ThemeKind; 21] = [
     ThemeKind::MountainNight,
     ThemeKind::MountainDawn,
     ThemeKind::Fjord,
+    ThemeKind::CatppuccinFrappe,
     ThemeKind::CatppuccinLatte,
+    ThemeKind::CatppuccinMacchiato,
     ThemeKind::CatppuccinMocha,
     ThemeKind::Dracula,
+    ThemeKind::EverforestDark,
+    ThemeKind::EverforestLight,
+    ThemeKind::GithubDark,
+    ThemeKind::GithubLight,
     ThemeKind::GruvboxDark,
     ThemeKind::GruvboxLight,
     ThemeKind::Kanagawa,
+    ThemeKind::NightOwl,
     ThemeKind::Nord,
     ThemeKind::OneDark,
     ThemeKind::RosePine,
+    ThemeKind::RosePineDawn,
+    ThemeKind::RosePineMoon,
     ThemeKind::SolarizedDark,
     ThemeKind::SolarizedLight,
     ThemeKind::TokyoNight,
+    ThemeKind::TokyoNightDay,
 ];
 
 /// Where the community themes start in `BUILT_IN_KINDS`, after the Mnemos and image themes.
@@ -185,6 +195,8 @@ fn search_ignores_the_accent_of_rose_pine() {
     assert!(ThemeKind::RosePine.matches("rose"));
     assert!(ThemeKind::RosePine.matches("Rosé"));
     assert!(ThemeKind::TokyoNight.matches("tokyo"));
+    assert!(ThemeKind::RosePineDawn.matches("rose pine dawn"));
+    assert!(ThemeKind::CatppuccinFrappe.matches("frappe"));
     assert!(!ThemeKind::Nord.matches("rose"));
 }
 
@@ -197,18 +209,28 @@ fn display_names_of_community_themes() {
     assert_eq!(
         names,
         [
+            "Catppuccin Frappé",
             "Catppuccin Latte",
+            "Catppuccin Macchiato",
             "Catppuccin Mocha",
             "Dracula",
+            "Everforest Dark",
+            "Everforest Light",
+            "GitHub Dark",
+            "GitHub Light",
             "Gruvbox Dark",
             "Gruvbox Light",
             "Kanagawa",
+            "Night Owl",
             "Nord",
             "One Dark",
             "Rosé Pine",
+            "Rosé Pine Dawn",
+            "Rosé Pine Moon",
             "Solarized Dark",
             "Solarized Light",
             "Tokyo Night",
+            "Tokyo Night Day",
         ]
     );
 }
@@ -323,6 +345,16 @@ fn settings_file_values_round_trip_and_legacy_values_still_parse() {
         ("nord", ThemeKind::Nord),
         ("one_dark", ThemeKind::OneDark),
         ("kanagawa", ThemeKind::Kanagawa),
+        ("catppuccin_frappe", ThemeKind::CatppuccinFrappe),
+        ("catppuccin_macchiato", ThemeKind::CatppuccinMacchiato),
+        ("everforest_dark", ThemeKind::EverforestDark),
+        ("everforest_light", ThemeKind::EverforestLight),
+        ("github_dark", ThemeKind::GithubDark),
+        ("github_light", ThemeKind::GithubLight),
+        ("night_owl", ThemeKind::NightOwl),
+        ("rose_pine_dawn", ThemeKind::RosePineDawn),
+        ("rose_pine_moon", ThemeKind::RosePineMoon),
+        ("tokyo_night_day", ThemeKind::TokyoNightDay),
         ("stone", ThemeKind::Stone),
         ("slate", ThemeKind::Slate),
         ("mountain_night", ThemeKind::MountainNight),

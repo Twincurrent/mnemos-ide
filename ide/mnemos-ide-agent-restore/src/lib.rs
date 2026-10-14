@@ -70,8 +70,9 @@ pub mod queue;
 
 pub use guard::{resume_mode, AgentsLive, NewestTurn, ResumeMode, RECENT_ELSEWHERE};
 pub use model::{
-    fork_command, resume_command, snapshot_path, transcript_stat, RestoreError, RestoreSnapshot,
-    SessionEntry, MAX_RESTORED_SESSIONS, MAX_SNAPSHOT_AGE_SECS, SNAPSHOT_VERSION,
+    claude_program, fork_command, fork_command_with, resume_command, resume_command_with,
+    snapshot_path, transcript_stat, RestoreError, RestoreSnapshot,
+    SessionEntry, DEFAULT_CLAUDE_PROGRAM, MAX_CLAUDE_PROGRAM_LEN, MAX_RESTORED_SESSIONS, MAX_SNAPSHOT_AGE_SECS, SNAPSHOT_VERSION,
 };
 pub use queue::{
     defer, forget_deferred, last_live_at, pane_uuid_hex, snapshot_saved_at, take_matching,

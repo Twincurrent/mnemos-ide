@@ -508,6 +508,14 @@ impl TeamControl {
                     "you": view == caller,
                     "spawned_by_you": spawned.is_some_and(|s| s.coordinator == caller),
                     "status": agent.map(|a| match &a.status {
+                        // Started (or resumed after a restart) and no turn yet:
+                        // it sits at its prompt. The model calls a new session
+                        // in progress until its first `Stop`.
+                        CLIAgentSessionStatus::InProgress
+                            if a.session_context.query.is_none() && a.session_context.response.is_none() =>
+                        {
+                            "idle".to_string()
+                        }
                         CLIAgentSessionStatus::InProgress => "working".to_string(),
                         CLIAgentSessionStatus::Success => "idle".to_string(),
                         CLIAgentSessionStatus::Blocked { message } => format!("blocked: {}", message.as_deref().unwrap_or("")),

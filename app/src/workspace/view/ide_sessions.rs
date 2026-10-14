@@ -472,13 +472,14 @@ pub(super) fn resume_tab(
     tabs.iter().position(matches)
 }
 
-/// `claude --resume <id>`, with `--fork-session` for a fork. The id has
-/// passed `is_safe_session_id` (hex and dashes), so no shell needs quoting.
-pub(super) fn resume_command(session_id: &str, fork: bool) -> String {
+/// `<program> --resume <id>`, with `--fork-session` for a fork. `program` is
+/// `claude` or the user's `agents.restore.claude_command`. The id has passed
+/// `is_safe_session_id` (hex and dashes), so no shell needs quoting.
+pub(super) fn resume_command(program: &str, session_id: &str, fork: bool) -> String {
     if fork {
-        mnemos_ide_agent_restore::fork_command(session_id, false)
+        mnemos_ide_agent_restore::fork_command_with(program, session_id, false)
     } else {
-        mnemos_ide_agent_restore::resume_command(session_id, false)
+        mnemos_ide_agent_restore::resume_command_with(program, session_id, false)
     }
 }
 
@@ -736,7 +737,7 @@ impl Workspace {
             return;
         }
         let cwd = req.cwd.to_path_buf();
-        let command = resume_command(req.session_id, req.fork);
+        let command = resume_command(&Workspace::ide_claude_program(ctx), req.session_id, req.fork);
         log::info!(target: "mnemos_ide", "sessions: resuming {} (fork: {}) in {}", req.session_id, req.fork, cwd.display());
 
         // An existing tab of the project: by id first, in any window, then by

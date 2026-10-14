@@ -502,3 +502,29 @@ fn fork_command_forks_the_same_session() {
         format!("claude --resume {UUID_A} --fork-session")
     );
 }
+
+#[test]
+fn a_configured_program_starts_the_resume() {
+    assert_eq!(
+        resume_command_with("cc", UUID_A, false),
+        format!("cc --resume {UUID_A}")
+    );
+    assert_eq!(
+        fork_command_with(" USE_BUILTIN_RIPGREP=0 claude ", UUID_A, true),
+        format!("USE_BUILTIN_RIPGREP=0 claude --resume {UUID_A} --dangerously-skip-permissions --fork-session")
+    );
+    // The program already skips permissions: the flag is not added twice.
+    assert_eq!(
+        resume_command_with("claude --dangerously-skip-permissions", UUID_A, true),
+        format!("claude --dangerously-skip-permissions --resume {UUID_A}")
+    );
+}
+
+#[test]
+fn an_unsafe_or_blank_program_falls_back_to_claude() {
+    for bad in ["", "   ", "cc; rm -rf ~", "cc && x", "$(x)", "`x`", "cc\nx", "a'b", "a\"b", "cc > f", "cc | x"] {
+        assert_eq!(claude_program(bad), DEFAULT_CLAUDE_PROGRAM, "{bad:?}");
+    }
+    assert_eq!(claude_program(&"c".repeat(MAX_CLAUDE_PROGRAM_LEN + 1)), DEFAULT_CLAUDE_PROGRAM);
+    assert_eq!(claude_program("~/bin/claude-wrapper"), "~/bin/claude-wrapper");
+}

@@ -37,18 +37,28 @@ fn names_are_set_and_unique() {
             MOUNTAIN_NIGHT_NAME,
             MOUNTAIN_DAWN_NAME,
             FJORD_NAME,
+            CATPPUCCIN_FRAPPE_NAME,
             CATPPUCCIN_LATTE_NAME,
+            CATPPUCCIN_MACCHIATO_NAME,
             CATPPUCCIN_MOCHA_NAME,
             DRACULA_NAME,
+            EVERFOREST_DARK_NAME,
+            EVERFOREST_LIGHT_NAME,
+            GITHUB_DARK_NAME,
+            GITHUB_LIGHT_NAME,
             GRUVBOX_DARK_NAME,
             GRUVBOX_LIGHT_NAME,
             KANAGAWA_NAME,
+            NIGHT_OWL_NAME,
             NORD_NAME,
             ONE_DARK_NAME,
             ROSE_PINE_NAME,
+            ROSE_PINE_DAWN_NAME,
+            ROSE_PINE_MOON_NAME,
             SOLARIZED_DARK_NAME,
             SOLARIZED_LIGHT_NAME,
             TOKYO_NIGHT_NAME,
+            TOKYO_NIGHT_DAY_NAME,
         ]
     );
     let mut unique = names.clone();
@@ -171,8 +181,12 @@ fn light_themes_are_light_and_others_are_dark() {
         STONE_NAME,
         MOUNTAIN_DAWN_NAME,
         CATPPUCCIN_LATTE_NAME,
+        EVERFOREST_LIGHT_NAME,
+        GITHUB_LIGHT_NAME,
         GRUVBOX_LIGHT_NAME,
+        ROSE_PINE_DAWN_NAME,
         SOLARIZED_LIGHT_NAME,
+        TOKYO_NIGHT_DAY_NAME,
     ];
     for theme in all() {
         let name = theme.name().unwrap();
@@ -251,6 +265,11 @@ fn community_foreground_floor(name: &str) -> f32 {
         SOLARIZED_LIGHT_NAME => 4.1,
         // Atom's default text on its syntax background.
         ONE_DARK_NAME => 6.5,
+        // Everforest Light's fg on bg0, Rosé Pine Dawn's text on base and Tokyo Night Day's
+        // blue text on its grey ground.
+        EVERFOREST_LIGHT_NAME => 5.1,
+        ROSE_PINE_DAWN_NAME => 6.6,
+        TOKYO_NIGHT_DAY_NAME => 4.5,
         _ => 7.0,
     }
 }

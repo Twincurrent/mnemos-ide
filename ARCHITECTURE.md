@@ -121,7 +121,13 @@ A session that ran with permission checks bypassed comes back with `--dangerousl
 again (`SessionEntry::skip_permissions`): mnemos-agents 1.3.2 sends each hook's `permission_mode`,
 and a session that reported `bypassPermissions` once keeps the flag, since Claude Code only offers
 that mode to a session started with it. Without it a restored session would open in the user's
-default mode (`auto`, say) instead of the way it was started. Signed in, the panes get their command once both the first live-agents answer and the first
+default mode (`auto`, say) instead of the way it was started. A session already restored without
+the flag reports `auto` and stays that way, and a launch alias's environment (`USE_BUILTIN_RIPGREP=0`)
+is never seen by the hooks, so the program typed is a setting too: `agents.restore.claude_command`
+(default `claude`, `SyncToCloud::Never` since it names a local program; the sessions list uses it
+too). The command goes into the pane's interactive shell, so an alias such as `cc` resolves;
+`claude_program` falls back to `claude` for anything with quotes, `$`, `;`, `|`, `&`, redirections or
+newlines, and the bypass flag is not added twice when the program has it. Signed in, the panes get their command once both the first live-agents answer and the first
 transcript pull of the process are in (`SyncStatusSnapshot::first_transcript_pull_done`), at most
 10 s after the first restore of the process; signed out, at once (`live_agents_wanted` reads
 right away, it does not wait for the polling to start). Then `guard::resume_mode` forks when

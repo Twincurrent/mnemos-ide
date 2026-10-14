@@ -3907,6 +3907,7 @@ impl Workspace {
             .map(|dir| mnemos_ide_sync::transcripts::pulled_origins_cached(&dir.join("store")))
             .unwrap_or_default();
 
+        let program = Self::ide_claude_program(ctx);
         let mut decided = Vec::with_capacity(pending.len());
         for (entry, view) in pending {
             let id = entry.session_id.clone();
@@ -3935,7 +3936,7 @@ impl Workspace {
                         "restoring claude session {id} into pane {}",
                         entry.pane_uuid_hex,
                     );
-                    mnemos_ide_agent_restore::resume_command(&id, entry.skip_permissions)
+                    mnemos_ide_agent_restore::resume_command_with(&program, &id, entry.skip_permissions)
                 }
                 mnemos_ide_agent_restore::ResumeMode::Fork => {
                     log::info!(
@@ -3943,12 +3944,21 @@ impl Workspace {
                         "restoring a fork of claude session {id} into pane {}: another machine may be running it (agents-live: {live:?}, newest turn: {newest:?})",
                         entry.pane_uuid_hex,
                     );
-                    mnemos_ide_agent_restore::fork_command(&id, entry.skip_permissions)
+                    mnemos_ide_agent_restore::fork_command_with(&program, &id, entry.skip_permissions)
                 }
             };
             decided.push((entry, view, command));
         }
         self.ide_restore_run_when_ready(decided, Instant::now() + IDE_RESTORE_SHELL_WAIT, ctx);
+    }
+
+    /// Mnemos IDE: the program a Claude resume starts, from
+    /// `agents.restore.claude_command` (`claude` unless the user set an alias).
+    pub(crate) fn ide_claude_program(ctx: &AppContext) -> String {
+        use crate::terminal::cli_agent_sessions::event_settings::CliAgentEventSettings;
+        use ::settings::Setting as _;
+        let configured = CliAgentEventSettings::as_ref(ctx).restore_claude_command.value();
+        mnemos_ide_agent_restore::claude_program(configured).to_owned()
     }
 
     /// Mnemos IDE: type each decided restore command into its pane once the

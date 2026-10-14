@@ -5,10 +5,12 @@ use std::iter::FromIterator;
 use std::path::PathBuf;
 use mnemos_core::ui::color::pick_foreground_color;
 use mnemos_core::ui::theme::mnemos_themes::{
-    catppuccin_latte, catppuccin_mocha, dracula, fjord, gruvbox_dark, gruvbox_light, kanagawa,
-    mnemos_contrast, mnemos_day, mnemos_day_colors, mnemos_moss, mnemos_night, mnemos_night_colors,
-    mountain_dawn, mountain_night, nord, one_dark, rose_pine, slate, solarized_dark,
-    solarized_light, stone, tokyo_night,
+    catppuccin_frappe, catppuccin_latte, catppuccin_macchiato, catppuccin_mocha, dracula,
+    everforest_dark, everforest_light, fjord, github_dark, github_light, gruvbox_dark,
+    gruvbox_light, kanagawa, mnemos_contrast, mnemos_day, mnemos_day_colors, mnemos_moss,
+    mnemos_night, mnemos_night_colors, mountain_dawn, mountain_night, night_owl, nord, one_dark,
+    rose_pine, rose_pine_dawn, rose_pine_moon, slate, solarized_dark, solarized_light, stone,
+    tokyo_night, tokyo_night_day,
 };
 use mnemos_ui::assets::asset_cache::AssetSource;
 use mnemos_ui::{
@@ -83,30 +85,50 @@ pub enum ThemeKind {
     // across synced machines. The others are new and need every synced machine on a build that
     // has them, like the Mnemos variants. Serde names the variants, so their position here does
     // not change any saved value.
+    #[schemars(description = "Catppuccin Frappé")]
+    CatppuccinFrappe,
     #[schemars(description = "Catppuccin Latte")]
     CatppuccinLatte,
+    #[schemars(description = "Catppuccin Macchiato")]
+    CatppuccinMacchiato,
     #[schemars(description = "Catppuccin Mocha")]
     CatppuccinMocha,
     #[schemars(description = "Dracula")]
     Dracula,
+    #[schemars(description = "Everforest Dark")]
+    EverforestDark,
+    #[schemars(description = "Everforest Light")]
+    EverforestLight,
+    #[schemars(description = "GitHub Dark")]
+    GithubDark,
+    #[schemars(description = "GitHub Light")]
+    GithubLight,
     #[schemars(description = "Gruvbox Dark")]
     GruvboxDark,
     #[schemars(description = "Gruvbox Light")]
     GruvboxLight,
     #[schemars(description = "Kanagawa")]
     Kanagawa,
+    #[schemars(description = "Night Owl")]
+    NightOwl,
     #[schemars(description = "Nord")]
     Nord,
     #[schemars(description = "One Dark")]
     OneDark,
     #[schemars(description = "Rosé Pine")]
     RosePine,
+    #[schemars(description = "Rosé Pine Dawn")]
+    RosePineDawn,
+    #[schemars(description = "Rosé Pine Moon")]
+    RosePineMoon,
     #[schemars(description = "Solarized Dark")]
     SolarizedDark,
     #[schemars(description = "Solarized Light")]
     SolarizedLight,
     #[schemars(description = "Tokyo Night")]
     TokyoNight,
+    #[schemars(description = "Tokyo Night Day")]
+    TokyoNightDay,
     // Legacy built-in themes inherited from upstream: kept only so old settings still
     // deserialize, never listed. A saved value is never rewritten, only rendered as the Mnemos
     // theme that replaces it (`ThemeKind::resolved`): writing a Mnemos variant on launch would
@@ -176,18 +198,28 @@ impl std::fmt::Display for ThemeKind {
             ThemeKind::MountainNight => "Mountain Night",
             ThemeKind::MountainDawn => "Mountain Dawn",
             ThemeKind::Fjord => "Fjord",
+            ThemeKind::CatppuccinFrappe => "Catppuccin Frappé",
             ThemeKind::CatppuccinLatte => "Catppuccin Latte",
+            ThemeKind::CatppuccinMacchiato => "Catppuccin Macchiato",
             ThemeKind::CatppuccinMocha => "Catppuccin Mocha",
             ThemeKind::Dracula => "Dracula",
+            ThemeKind::EverforestDark => "Everforest Dark",
+            ThemeKind::EverforestLight => "Everforest Light",
+            ThemeKind::GithubDark => "GitHub Dark",
+            ThemeKind::GithubLight => "GitHub Light",
             ThemeKind::GruvboxDark => "Gruvbox Dark",
             ThemeKind::GruvboxLight => "Gruvbox Light",
             ThemeKind::Kanagawa => "Kanagawa",
+            ThemeKind::NightOwl => "Night Owl",
             ThemeKind::Nord => "Nord",
             ThemeKind::OneDark => "One Dark",
             ThemeKind::RosePine => "Rosé Pine",
+            ThemeKind::RosePineDawn => "Rosé Pine Dawn",
+            ThemeKind::RosePineMoon => "Rosé Pine Moon",
             ThemeKind::SolarizedDark => "Solarized Dark",
             ThemeKind::SolarizedLight => "Solarized Light",
             ThemeKind::TokyoNight => "Tokyo Night",
+            ThemeKind::TokyoNightDay => "Tokyo Night Day",
             ThemeKind::Light => "Light",
             ThemeKind::Dark => "Dark",
             ThemeKind::JellyFish => "Jellyfish",
@@ -252,18 +284,28 @@ impl ThemeKind {
             | ThemeKind::MountainNight
             | ThemeKind::MountainDawn
             | ThemeKind::Fjord
+            | ThemeKind::CatppuccinFrappe
             | ThemeKind::CatppuccinLatte
+            | ThemeKind::CatppuccinMacchiato
             | ThemeKind::CatppuccinMocha
             | ThemeKind::Dracula
+            | ThemeKind::EverforestDark
+            | ThemeKind::EverforestLight
+            | ThemeKind::GithubDark
+            | ThemeKind::GithubLight
             | ThemeKind::GruvboxDark
             | ThemeKind::GruvboxLight
             | ThemeKind::Kanagawa
+            | ThemeKind::NightOwl
             | ThemeKind::Nord
             | ThemeKind::OneDark
             | ThemeKind::RosePine
+            | ThemeKind::RosePineDawn
+            | ThemeKind::RosePineMoon
             | ThemeKind::SolarizedDark
             | ThemeKind::SolarizedLight
             | ThemeKind::TokyoNight
+            | ThemeKind::TokyoNightDay
             | ThemeKind::Custom(_)
             | ThemeKind::CustomBase16(_)
             | ThemeKind::InMemory(_) => None,
@@ -438,18 +480,28 @@ impl MnemosThemeConfig {
             (ThemeKind::MountainNight, mountain_night()),
             (ThemeKind::MountainDawn, mountain_dawn()),
             (ThemeKind::Fjord, fjord()),
+            (ThemeKind::CatppuccinFrappe, catppuccin_frappe()),
             (ThemeKind::CatppuccinLatte, catppuccin_latte()),
+            (ThemeKind::CatppuccinMacchiato, catppuccin_macchiato()),
             (ThemeKind::CatppuccinMocha, catppuccin_mocha()),
             (ThemeKind::Dracula, dracula()),
+            (ThemeKind::EverforestDark, everforest_dark()),
+            (ThemeKind::EverforestLight, everforest_light()),
+            (ThemeKind::GithubDark, github_dark()),
+            (ThemeKind::GithubLight, github_light()),
             (ThemeKind::GruvboxDark, gruvbox_dark()),
             (ThemeKind::GruvboxLight, gruvbox_light()),
             (ThemeKind::Kanagawa, kanagawa()),
+            (ThemeKind::NightOwl, night_owl()),
             (ThemeKind::Nord, nord()),
             (ThemeKind::OneDark, one_dark()),
             (ThemeKind::RosePine, rose_pine()),
+            (ThemeKind::RosePineDawn, rose_pine_dawn()),
+            (ThemeKind::RosePineMoon, rose_pine_moon()),
             (ThemeKind::SolarizedDark, solarized_dark()),
             (ThemeKind::SolarizedLight, solarized_light()),
             (ThemeKind::TokyoNight, tokyo_night()),
+            (ThemeKind::TokyoNightDay, tokyo_night_day()),
         ]);
         MnemosThemeConfig { theme_map }
     }

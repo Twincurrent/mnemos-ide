@@ -118,30 +118,37 @@ their colour values from these projects' published palettes and terminal
 ports. Mnemos uses the colours only; no code or theme file of these projects
 is included. Credit and licenses:
 
-- Catppuccin Latte and Mocha: catppuccin/catppuccin and catppuccin/kitty,
-  Copyright (c) 2021 Catppuccin, MIT.
+- Catppuccin Frappé, Latte, Macchiato and Mocha: catppuccin/catppuccin and
+  catppuccin/kitty, Copyright (c) 2021 Catppuccin, MIT.
 - Dracula: the Dracula specification (draculatheme.com/spec) and
   dracula/dracula-theme, Copyright (c) 2023 Dracula Theme, MIT.
+- Everforest Dark and Light: sainnhe/everforest, Copyright (c) 2019 Sainnhe
+  Park, MIT.
+- GitHub Dark and Light: primer/github-vscode-theme and primer/primitives,
+  Copyright (c) GitHub Inc., MIT.
 - Gruvbox Dark and Light: morhetz/gruvbox by Pavel Pertsev, MIT/X11 (stated
   in its README and package.json; the repository has no license file).
 - Kanagawa: rebelot/kanagawa.nvim, Copyright (c) 2021 Tommaso Laurenzi, MIT.
+- Night Owl: sdras/night-owl-vscode-theme, Copyright (c) 2018 Sarah Drasner,
+  MIT.
 - Nord: nordtheme/nord and nordtheme/alacritty, Copyright (c) 2016-present
   Sven Greb, MIT.
 - One Dark: atom/one-dark-syntax, Copyright (c) 2016 GitHub Inc., MIT, with
   the terminal mapping of joshdick/onedark.vim, Copyright (c) 2015 Joshua
   Dick, MIT.
-- Rose Pine: rose-pine/rose-pine-theme and rose-pine/kitty, Copyright (c)
-  2023 Rose Pine, MIT.
+- Rose Pine, Rose Pine Dawn and Rose Pine Moon: rose-pine/rose-pine-theme
+  and rose-pine/kitty, Copyright (c) 2023 Rose Pine, MIT.
 - Solarized Dark and Light: altercation/solarized, Copyright (c) 2011 Ethan
   Schoonover, MIT.
 - Tokyo Night: tokyo-night/tokyo-night-vscode-theme, Copyright (c)
-  2018-present Enkia, MIT. The night variant's terminal colours come from
-  folke/tokyonight.nvim by Folke Lemaitre, whose repository is licensed under
-  the Apache License 2.0 (its terminal theme files say MIT in their headers).
+  2018-present Enkia, MIT. The night variant's terminal colours, and all of
+  Tokyo Night Day, come from folke/tokyonight.nvim by Folke Lemaitre, whose
+  repository is licensed under the Apache License 2.0 (its terminal theme
+  files say MIT in their headers).
 
-"Catppuccin", "Dracula", "Nord", "Rose Pine", "Solarized", "Tokyo Night" and
-the other theme names are used only to identify the palettes; their projects
-do not endorse Mnemos.
+"Catppuccin", "Dracula", "Everforest", "GitHub", "Night Owl", "Nord", "Rose
+Pine", "Solarized", "Tokyo Night" and the other theme names are used only to
+identify the palettes; their projects do not endorse Mnemos.
 
 
 Theme background images

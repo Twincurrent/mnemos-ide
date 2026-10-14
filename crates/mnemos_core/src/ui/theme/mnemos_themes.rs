@@ -47,6 +47,16 @@ pub const ROSE_PINE_NAME: &str = "Rosé Pine";
 pub const SOLARIZED_DARK_NAME: &str = "Solarized Dark";
 pub const SOLARIZED_LIGHT_NAME: &str = "Solarized Light";
 pub const TOKYO_NIGHT_NAME: &str = "Tokyo Night";
+pub const CATPPUCCIN_FRAPPE_NAME: &str = "Catppuccin Frappé";
+pub const CATPPUCCIN_MACCHIATO_NAME: &str = "Catppuccin Macchiato";
+pub const EVERFOREST_DARK_NAME: &str = "Everforest Dark";
+pub const EVERFOREST_LIGHT_NAME: &str = "Everforest Light";
+pub const GITHUB_DARK_NAME: &str = "GitHub Dark";
+pub const GITHUB_LIGHT_NAME: &str = "GitHub Light";
+pub const NIGHT_OWL_NAME: &str = "Night Owl";
+pub const ROSE_PINE_DAWN_NAME: &str = "Rosé Pine Dawn";
+pub const ROSE_PINE_MOON_NAME: &str = "Rosé Pine Moon";
+pub const TOKYO_NIGHT_DAY_NAME: &str = "Tokyo Night Day";
 
 /// The bundled background images of the image themes, as paths in the app's embedded assets
 /// (`app/assets/bundled/...`, embedded by `Assets` in `app/src/lib.rs`). Bundled, never fetched:
@@ -395,6 +405,210 @@ const KANAGAWA_BRIGHT: AnsiColors = AnsiColors::new(
     AnsiColor::from_u32(0x938AA9FF),
     AnsiColor::from_u32(0x7AA89FFF),
     AnsiColor::from_u32(0xDCD7BAFF),
+);
+
+// Catppuccin Frappé (catppuccin terminal ports).
+const CATPPUCCIN_FRAPPE_NORMAL: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x51576DFF),
+    AnsiColor::from_u32(0xE78284FF),
+    AnsiColor::from_u32(0xA6D189FF),
+    AnsiColor::from_u32(0xE5C890FF),
+    AnsiColor::from_u32(0x8CAAEEFF),
+    AnsiColor::from_u32(0xF4B8E4FF),
+    AnsiColor::from_u32(0x81C8BEFF),
+    AnsiColor::from_u32(0xB5BFE2FF),
+);
+const CATPPUCCIN_FRAPPE_BRIGHT: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x626880FF),
+    AnsiColor::from_u32(0xE78284FF),
+    AnsiColor::from_u32(0xA6D189FF),
+    AnsiColor::from_u32(0xE5C890FF),
+    AnsiColor::from_u32(0x8CAAEEFF),
+    AnsiColor::from_u32(0xF4B8E4FF),
+    AnsiColor::from_u32(0x81C8BEFF),
+    AnsiColor::from_u32(0xA5ADCEFF),
+);
+
+// Catppuccin Macchiato (catppuccin terminal ports).
+const CATPPUCCIN_MACCHIATO_NORMAL: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x494D64FF),
+    AnsiColor::from_u32(0xED8796FF),
+    AnsiColor::from_u32(0xA6DA95FF),
+    AnsiColor::from_u32(0xEED49FFF),
+    AnsiColor::from_u32(0x8AADF4FF),
+    AnsiColor::from_u32(0xF5BDE6FF),
+    AnsiColor::from_u32(0x8BD5CAFF),
+    AnsiColor::from_u32(0xB8C0E0FF),
+);
+const CATPPUCCIN_MACCHIATO_BRIGHT: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x5B6078FF),
+    AnsiColor::from_u32(0xED8796FF),
+    AnsiColor::from_u32(0xA6DA95FF),
+    AnsiColor::from_u32(0xEED49FFF),
+    AnsiColor::from_u32(0x8AADF4FF),
+    AnsiColor::from_u32(0xF5BDE6FF),
+    AnsiColor::from_u32(0x8BD5CAFF),
+    AnsiColor::from_u32(0xA5ADCBFF),
+);
+
+// Everforest dark, medium contrast (sainnhe/everforest): its accents, with black bg3 and white
+// fg as everforest.vim sets its terminal colours; the bright set repeats the normal one there.
+const EVERFOREST_DARK_ANSI: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x475258FF),
+    AnsiColor::from_u32(0xE67E80FF),
+    AnsiColor::from_u32(0xA7C080FF),
+    AnsiColor::from_u32(0xDBBC7FFF),
+    AnsiColor::from_u32(0x7FBBB3FF),
+    AnsiColor::from_u32(0xD699B6FF),
+    AnsiColor::from_u32(0x83C092FF),
+    AnsiColor::from_u32(0xD3C6AAFF),
+);
+
+// Everforest light, medium contrast: the light accents, with black fg and white bg3, as
+// everforest.vim sets them; the bright set repeats the normal one.
+const EVERFOREST_LIGHT_ANSI: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x5C6A72FF),
+    AnsiColor::from_u32(0xF85552FF),
+    AnsiColor::from_u32(0x8DA101FF),
+    AnsiColor::from_u32(0xDFA000FF),
+    AnsiColor::from_u32(0x3A94C5FF),
+    AnsiColor::from_u32(0xDF69BAFF),
+    AnsiColor::from_u32(0x35A77CFF),
+    AnsiColor::from_u32(0xE6E2CCFF),
+);
+
+// GitHub Dark (primer/github-vscode-theme, Dark Default terminal colours).
+const GITHUB_DARK_NORMAL: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x484F58FF),
+    AnsiColor::from_u32(0xFF7B72FF),
+    AnsiColor::from_u32(0x3FB950FF),
+    AnsiColor::from_u32(0xD29922FF),
+    AnsiColor::from_u32(0x58A6FFFF),
+    AnsiColor::from_u32(0xBC8CFFFF),
+    AnsiColor::from_u32(0x39C5CFFF),
+    AnsiColor::from_u32(0xB1BAC4FF),
+);
+const GITHUB_DARK_BRIGHT: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x6E7681FF),
+    AnsiColor::from_u32(0xFFA198FF),
+    AnsiColor::from_u32(0x56D364FF),
+    AnsiColor::from_u32(0xE3B341FF),
+    AnsiColor::from_u32(0x79C0FFFF),
+    AnsiColor::from_u32(0xD2A8FFFF),
+    AnsiColor::from_u32(0x56D4DDFF),
+    AnsiColor::from_u32(0xFFFFFFFF),
+);
+
+// GitHub Light (primer/github-vscode-theme, Light Default terminal colours).
+const GITHUB_LIGHT_NORMAL: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x24292FFF),
+    AnsiColor::from_u32(0xCF222EFF),
+    AnsiColor::from_u32(0x116329FF),
+    AnsiColor::from_u32(0x4D2D00FF),
+    AnsiColor::from_u32(0x0969DAFF),
+    AnsiColor::from_u32(0x8250DFFF),
+    AnsiColor::from_u32(0x1B7C83FF),
+    AnsiColor::from_u32(0x6E7781FF),
+);
+const GITHUB_LIGHT_BRIGHT: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x57606AFF),
+    AnsiColor::from_u32(0xA40E26FF),
+    AnsiColor::from_u32(0x1A7F37FF),
+    AnsiColor::from_u32(0x633C01FF),
+    AnsiColor::from_u32(0x218BFFFF),
+    AnsiColor::from_u32(0xA475F9FF),
+    AnsiColor::from_u32(0x3192AAFF),
+    AnsiColor::from_u32(0x8C959FFF),
+);
+
+// Night Owl (sdras/night-owl-vscode-theme terminal colours), with one change: the theme's black
+// is #011627, the background itself, so black text vanished; black is the theme's selection
+// blue #1D3B53 here, one step up.
+const NIGHT_OWL_NORMAL: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x1D3B53FF),
+    AnsiColor::from_u32(0xEF5350FF),
+    AnsiColor::from_u32(0x22DA6EFF),
+    AnsiColor::from_u32(0xC5E478FF),
+    AnsiColor::from_u32(0x82AAFFFF),
+    AnsiColor::from_u32(0xC792EAFF),
+    AnsiColor::from_u32(0x21C7A8FF),
+    AnsiColor::from_u32(0xFFFFFFFF),
+);
+const NIGHT_OWL_BRIGHT: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x575656FF),
+    AnsiColor::from_u32(0xEF5350FF),
+    AnsiColor::from_u32(0x22DA6EFF),
+    AnsiColor::from_u32(0xFFEB95FF),
+    AnsiColor::from_u32(0x82AAFFFF),
+    AnsiColor::from_u32(0xC792EAFF),
+    AnsiColor::from_u32(0x7FDBCAFF),
+    AnsiColor::from_u32(0xFFFFFFFF),
+);
+
+// Rosé Pine Moon (rose-pine terminal ports).
+const ROSE_PINE_MOON_NORMAL: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x393552FF),
+    AnsiColor::from_u32(0xEB6F92FF),
+    AnsiColor::from_u32(0x3E8FB0FF),
+    AnsiColor::from_u32(0xF6C177FF),
+    AnsiColor::from_u32(0x9CCFD8FF),
+    AnsiColor::from_u32(0xC4A7E7FF),
+    AnsiColor::from_u32(0xEA9A97FF),
+    AnsiColor::from_u32(0xE0DEF4FF),
+);
+const ROSE_PINE_MOON_BRIGHT: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x6E6A86FF),
+    AnsiColor::from_u32(0xEB6F92FF),
+    AnsiColor::from_u32(0x3E8FB0FF),
+    AnsiColor::from_u32(0xF6C177FF),
+    AnsiColor::from_u32(0x9CCFD8FF),
+    AnsiColor::from_u32(0xC4A7E7FF),
+    AnsiColor::from_u32(0xEA9A97FF),
+    AnsiColor::from_u32(0xE0DEF4FF),
+);
+
+// Rosé Pine Dawn (rose-pine terminal ports).
+const ROSE_PINE_DAWN_NORMAL: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0xF2E9E1FF),
+    AnsiColor::from_u32(0xB4637AFF),
+    AnsiColor::from_u32(0x286983FF),
+    AnsiColor::from_u32(0xEA9D34FF),
+    AnsiColor::from_u32(0x56949FFF),
+    AnsiColor::from_u32(0x907AA9FF),
+    AnsiColor::from_u32(0xD7827EFF),
+    AnsiColor::from_u32(0x575279FF),
+);
+const ROSE_PINE_DAWN_BRIGHT: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0x9893A5FF),
+    AnsiColor::from_u32(0xB4637AFF),
+    AnsiColor::from_u32(0x286983FF),
+    AnsiColor::from_u32(0xEA9D34FF),
+    AnsiColor::from_u32(0x56949FFF),
+    AnsiColor::from_u32(0x907AA9FF),
+    AnsiColor::from_u32(0xD7827EFF),
+    AnsiColor::from_u32(0x575279FF),
+);
+
+// Tokyo Night, day variant (folke/tokyonight.nvim terminal extras).
+const TOKYO_NIGHT_DAY_NORMAL: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0xB4B5B9FF),
+    AnsiColor::from_u32(0xF52A65FF),
+    AnsiColor::from_u32(0x587539FF),
+    AnsiColor::from_u32(0x8C6C3EFF),
+    AnsiColor::from_u32(0x2E7DE9FF),
+    AnsiColor::from_u32(0x9854F1FF),
+    AnsiColor::from_u32(0x007197FF),
+    AnsiColor::from_u32(0x6172B0FF),
+);
+const TOKYO_NIGHT_DAY_BRIGHT: AnsiColors = AnsiColors::new(
+    AnsiColor::from_u32(0xA1A6C5FF),
+    AnsiColor::from_u32(0xFF4774FF),
+    AnsiColor::from_u32(0x5C8524FF),
+    AnsiColor::from_u32(0xA27629FF),
+    AnsiColor::from_u32(0x358AFFFF),
+    AnsiColor::from_u32(0xA463FFFF),
+    AnsiColor::from_u32(0x007EA8FF),
+    AnsiColor::from_u32(0x3760BFFF),
 );
 
 // The image themes: a background image drawn under the theme's ground colour (`image_theme`). Their ANSI
@@ -870,6 +1084,150 @@ pub fn kanagawa() -> MnemosTheme {
     )
 }
 
+/// Catppuccin Frappé: mauve accent.
+pub fn catppuccin_frappe() -> MnemosTheme {
+    // Like Mocha, both highlights are thinner than the defaults on Frappé's lighter ground: 23%
+    // mauve keeps text on a selection above 5:1 and 25% yellow keeps text on a context
+    // selection above 4.5:1.
+    solid_theme(
+        CATPPUCCIN_FRAPPE_NAME,
+        0x303446FF,
+        0xC6D0F5FF,
+        0xCA9EE6FF,
+        Details::Darker,
+        TerminalColors::new(CATPPUCCIN_FRAPPE_NORMAL, CATPPUCCIN_FRAPPE_BRIGHT),
+    )
+    .with_selection_opacities(Some(23), Some(25))
+}
+
+/// Catppuccin Macchiato: mauve accent.
+pub fn catppuccin_macchiato() -> MnemosTheme {
+    // Mauve and yellow are pale, so 22% keeps text on a selection above 6:1 and 28% keeps text on
+    // a context selection above 4.5:1.
+    solid_theme(
+        CATPPUCCIN_MACCHIATO_NAME,
+        0x24273AFF,
+        0xCAD3F5FF,
+        0xC6A0F6FF,
+        Details::Darker,
+        TerminalColors::new(CATPPUCCIN_MACCHIATO_NORMAL, CATPPUCCIN_MACCHIATO_BRIGHT),
+    )
+    .with_selection_opacities(Some(22), Some(28))
+}
+
+/// Everforest Dark (medium): bg0 ground, fg text, green accent.
+pub fn everforest_dark() -> MnemosTheme {
+    // fg on bg0 is 7.4:1, so the pale green and yellow highlights both drop to 22%.
+    solid_theme(
+        EVERFOREST_DARK_NAME,
+        0x2D353BFF,
+        0xD3C6AAFF,
+        0xA7C080FF,
+        Details::Darker,
+        TerminalColors::new(EVERFOREST_DARK_ANSI, EVERFOREST_DARK_ANSI),
+    )
+    .with_selection_opacities(Some(22), Some(22))
+}
+
+/// Everforest Light (medium): bg0 ground, fg text, blue accent.
+pub fn everforest_light() -> MnemosTheme {
+    // Everforest's green highlight is 2.7:1 on the light bg0, below the 3:1 floor for an accent,
+    // so the accent is the palette's blue. fg on bg0 is 5.2:1 by design; 41% blue is what it
+    // takes for the selection to stand 1.5:1 off the ground.
+    solid_theme(
+        EVERFOREST_LIGHT_NAME,
+        0xFDF6E3FF,
+        0x5C6A72FF,
+        0x3A94C5FF,
+        Details::Lighter,
+        TerminalColors::new(EVERFOREST_LIGHT_ANSI, EVERFOREST_LIGHT_ANSI),
+    )
+    .with_selection_opacities(Some(41), None)
+}
+
+/// GitHub Dark: Primer's dark canvas and text, accent blue.
+pub fn github_dark() -> MnemosTheme {
+    // The ground is near black, so the default 25% blue is only just 1.5:1 off it; 30% is
+    // clearly visible and the text stays far above 7:1 on it.
+    solid_theme(
+        GITHUB_DARK_NAME,
+        0x0D1117FF,
+        0xE6EDF3FF,
+        0x58A6FFFF,
+        Details::Darker,
+        TerminalColors::new(GITHUB_DARK_NORMAL, GITHUB_DARK_BRIGHT),
+    )
+    .with_selection_opacities(Some(30), None)
+}
+
+/// GitHub Light: Primer's light canvas and text, accent blue.
+pub fn github_light() -> MnemosTheme {
+    solid_theme(
+        GITHUB_LIGHT_NAME,
+        0xFFFFFFFF,
+        0x1F2328FF,
+        0x0969DAFF,
+        Details::Lighter,
+        TerminalColors::new(GITHUB_LIGHT_NORMAL, GITHUB_LIGHT_BRIGHT),
+    )
+}
+
+/// Night Owl: blue accent, the colour Night Owl gives keywords and links.
+pub fn night_owl() -> MnemosTheme {
+    solid_theme(
+        NIGHT_OWL_NAME,
+        0x011627FF,
+        0xD6DEEBFF,
+        0x82AAFFFF,
+        Details::Darker,
+        TerminalColors::new(NIGHT_OWL_NORMAL, NIGHT_OWL_BRIGHT),
+    )
+}
+
+/// Rosé Pine Dawn: iris accent, as in the main variant.
+pub fn rose_pine_dawn() -> MnemosTheme {
+    // text on base is 6.7:1 by design; 40% iris is what it takes for the selection to stand
+    // 1.5:1 off the ground.
+    solid_theme(
+        ROSE_PINE_DAWN_NAME,
+        0xFAF4EDFF,
+        0x575279FF,
+        0x907AA9FF,
+        Details::Lighter,
+        TerminalColors::new(ROSE_PINE_DAWN_NORMAL, ROSE_PINE_DAWN_BRIGHT),
+    )
+    .with_selection_opacities(Some(40), None)
+}
+
+/// Rosé Pine Moon: iris accent, as in the main variant.
+pub fn rose_pine_moon() -> MnemosTheme {
+    // 23% iris instead of 25%: the default sits right at the 7:1 floor for the text on it.
+    solid_theme(
+        ROSE_PINE_MOON_NAME,
+        0x232136FF,
+        0xE0DEF4FF,
+        0xC4A7E7FF,
+        Details::Darker,
+        TerminalColors::new(ROSE_PINE_MOON_NORMAL, ROSE_PINE_MOON_BRIGHT),
+    )
+    .with_selection_opacities(Some(23), None)
+}
+
+/// Tokyo Night Day: blue accent.
+pub fn tokyo_night_day() -> MnemosTheme {
+    // The day variant's blue text on its grey ground is 4.5:1 by design, which leaves a narrow
+    // band for a selection; 40% blue stands 1.5:1 off the ground and keeps the text near 3:1 on it.
+    solid_theme(
+        TOKYO_NIGHT_DAY_NAME,
+        0xE1E2E7FF,
+        0x3760BFFF,
+        0x2E7DE9FF,
+        Details::Lighter,
+        TerminalColors::new(TOKYO_NIGHT_DAY_NORMAL, TOKYO_NIGHT_DAY_BRIGHT),
+    )
+    .with_selection_opacities(Some(40), None)
+}
+
 /// The four Mnemos themes, in picker order. These are the themes the onboarding slide offers.
 pub fn mnemos() -> [MnemosTheme; 4] {
     [
@@ -886,20 +1244,30 @@ pub fn image() -> [MnemosTheme; 5] {
 }
 
 /// The community themes, alphabetically by name.
-pub fn community() -> [MnemosTheme; 12] {
+pub fn community() -> [MnemosTheme; 22] {
     [
+        catppuccin_frappe(),
         catppuccin_latte(),
+        catppuccin_macchiato(),
         catppuccin_mocha(),
         dracula(),
+        everforest_dark(),
+        everforest_light(),
+        github_dark(),
+        github_light(),
         gruvbox_dark(),
         gruvbox_light(),
         kanagawa(),
+        night_owl(),
         nord(),
         one_dark(),
         rose_pine(),
+        rose_pine_dawn(),
+        rose_pine_moon(),
         solarized_dark(),
         solarized_light(),
         tokyo_night(),
+        tokyo_night_day(),
     ]
 }
 

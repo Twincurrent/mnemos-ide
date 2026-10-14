@@ -73,10 +73,11 @@ A second machine needs sync; see [Sync](#sync-honest-status) and
   discarding uncommitted work.
 - **Copy as Markdown** for terminal blocks, in place of Warp's "Share block". Nothing is uploaded.
 - **Themes.** Mnemos Night (default), Mnemos Day, Mnemos Contrast and Mnemos Moss; five image
-  themes with a bundled background (Stone, Slate, Mountain Night, Mountain Dawn, Fjord); twelve
-  community themes built from their projects' published palettes (Catppuccin Latte and Mocha,
-  Dracula, Gruvbox Dark and Light, Kanagawa, Nord, One Dark, Rosé Pine, Solarized Dark and Light,
-  Tokyo Night).
+  themes with a bundled background (Stone, Slate, Mountain Night, Mountain Dawn, Fjord); twenty-two
+  community themes built from their projects' published palettes (Catppuccin Frappé, Latte,
+  Macchiato and Mocha, Dracula, Everforest Dark and Light, GitHub Dark and Light, Gruvbox Dark and
+  Light, Kanagawa, Night Owl, Nord, One Dark, Rosé Pine, Rosé Pine Dawn and Moon, Solarized Dark
+  and Light, Tokyo Night, Tokyo Night Day).
 - **With sync on:** projects, settings, Claude Code memory, `~/.claude` config and session
   transcripts follow you between machines, with working directories rewritten per machine, so
   `claude --resume` picks up a session started on the other computer. The agents panel also lists
