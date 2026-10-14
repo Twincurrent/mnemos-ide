@@ -98,7 +98,8 @@ Session restore, the sessions list and transcript sync work with Claude Code onl
 | Windows 11 x64 | Supported, used daily |
 | macOS Intel (x86_64) | Not built; releases are arm64 only |
 | Windows arm64 | The installer script has an arm64 target; not tested |
-| Linux | Code paths exist upstream; untested, no packages published |
+| NixOS x86_64 | Source package and development shell via Nix; no binary cache published |
+| Other Linux | Code paths exist upstream; untested, no packages published |
 
 ## Install
 
@@ -161,6 +162,25 @@ Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name
 Untested. `./script/bootstrap` runs `script/linux/bootstrap`, which installs the build, runtime
 and test dependencies with apt (dnf and pacman lists exist and are untested), including `protoc`
 25.1 and `git-lfs`. Reports and fixes are welcome.
+
+#### NixOS (x86_64)
+
+Enable Nix's `nix-command` and `flakes` experimental features. The flake pins Nixpkgs and the
+Rust toolchain. Run directly from GitHub:
+
+```sh
+nix run github:Twincurrent/mnemos-ide
+```
+
+From a checkout:
+
+```sh
+nix build                                           # package at ./result
+nix develop -c cargo run --bin mnemos --features gui  # isolated dev data
+```
+
+The package includes desktop integration and embedded assets; Nix manages updates.
+For flake-based NixOS or Home Manager installation, see [docs/nixos.md](docs/nixos.md).
 
 ### Dev builds keep their own data
 
@@ -242,7 +262,8 @@ says how to report a vulnerability.
   with mnemos-dev/mnemos, s60yucca/mnemos or Ori-Mnemos.
 - **Is it affiliated with Anthropic or Warp?** No. Not affiliated with or endorsed by Anthropic or
   Warp.
-- **Linux?** Untested, not unsupported. Builds may work; issues and fixes are welcome.
+- **Linux?** NixOS x86_64 has a source package and dev shell; see [docs/nixos.md](docs/nixos.md).
+  Other Linux distributions remain untested; issues and fixes are welcome.
 - **Can I use it at work?** Running an unmodified build triggers no AGPL obligations. If you
   distribute a modified build, you must offer its source.
 - **Why do shells inside Mnemos have `WARP_TERMINAL` set?** It mirrors `MNEMOS_TERMINAL` as a

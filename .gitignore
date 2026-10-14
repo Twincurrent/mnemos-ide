@@ -4,6 +4,8 @@ app/frameworks/dev/Carthage
 app/frameworks/**/*.xcframework
 /target
 /app/target
+/result
+/result-*
 /mnemos.xcworkspace
 *.dmg
 .idea/

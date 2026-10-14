@@ -64,6 +64,10 @@ Every release directory has `SHA256SUMS` and `SHA256SUMS.sig`. Check a download 
 Published builds are macOS 11.0 or later on Apple silicon and Windows 11 on x64. Other platforms
 build from source but get no published release, so their updater stays idle.
 
+NixOS x86_64 has a source package in `flake.nix` (`nix build`, `nix run`). It installs the desktop
+entry and icons, embeds release assets, and disables the self-updater so Nix owns upgrades.
+See [docs/nixos.md](docs/nixos.md) for installation and package maintenance.
+
 ## File associations (macOS)
 
 Every document type in the bundle's Info.plist is ranked `Alternate`: installing Mnemos never makes
