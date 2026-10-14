@@ -362,7 +362,10 @@ and the updater does not care. `MNEMOS_DMG_SKIP_FINDER=1` (or `RUNNER_NAME=nsc-*
 the start. This used to kill the release after the compile (2026-09-14 and 2026-09-24).
 
 **Signing.** `--selfsign` (the default) signs with a local *Apple Development* certificate;
-`--nosign` seals the bundle ad-hoc. Neither is notarized, and nothing in this repo notarizes: real
+`--nosign` seals the bundle ad-hoc. Both use `script/Release-Entitlements.plist`, which leaves out
+`get-task-allow` (with it any process of the user's could attach to Mnemos and use its camera,
+microphone and keychain grants); only `script/macos/run` signs dev bundles with
+`script/Debug-Entitlements.plist`, and `release` refuses a dmg that carries `get-task-allow`. Neither is notarized, and nothing in this repo notarizes: real
 Developer ID signing needs `MNEMOS_DEVELOPER_ID_CERT`, `MNEMOS_DEVELOPER_ID_CERT_PASSWORD`,
 `MNEMOS_NOTARIZATION_APPLE_ID` and `MNEMOS_NOTARIZATION_PASSWORD`, which `bundle` reads from GCP
 Secret Manager in upstream Warp's setup; that path is not wired up here, and releases so far are

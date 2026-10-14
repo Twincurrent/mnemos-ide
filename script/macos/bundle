@@ -764,14 +764,16 @@ if [[ $SELFSIGN = true || $CODESIGN = false ]]; then
     SIGNED_PATH="$BUNDLE_DIR/$MNEMOS_APP_NAME.app"
     echo "Self-signing $SIGNED_PATH with ${SIGNING_CERT}..."
     # Nothing inside Mnemos.app needs JIT entitlements. --deep handles the
-    # .app and its nested code.
-    codesign --force --deep --options runtime --sign "$SIGNING_CERT" "$SIGNED_PATH" --entitlements script/Debug-Entitlements.plist
+    # .app and its nested code. A bundle ships, so no get-task-allow: with it any
+    # process of the user's could attach to Mnemos and use its camera, microphone
+    # and keychain grants. script/macos/run keeps Debug-Entitlements.plist.
+    codesign --force --deep --options runtime --sign "$SIGNING_CERT" "$SIGNED_PATH" --entitlements script/Release-Entitlements.plist
     echo "Verifying the signature of $SIGNED_PATH..."
     codesign --verify --deep --strict "$SIGNED_PATH"
   elif [[ "$ARTIFACT" == cli ]]; then
     SIGNED_PATH="$OUT_DIR/$MNEMOS_BIN"
     echo "Self-signing $SIGNED_PATH with ${SIGNING_CERT}..."
-    codesign --force --options runtime --sign "$SIGNING_CERT" "$SIGNED_PATH" --entitlements script/Debug-Entitlements.plist
+    codesign --force --options runtime --sign "$SIGNING_CERT" "$SIGNED_PATH" --entitlements script/Release-Entitlements.plist
     echo "Verifying the signature of $SIGNED_PATH..."
     codesign --verify --strict "$SIGNED_PATH"
   fi

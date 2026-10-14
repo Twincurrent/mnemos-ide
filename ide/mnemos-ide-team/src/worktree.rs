@@ -157,6 +157,21 @@ fn main_worktree(repo: &Path) -> Result<PathBuf, WorktreeError> {
         .ok_or_else(|| WorktreeError::NotARepo(repo.to_path_buf()))
 }
 
+/// A start point for a new worktree's branch, as the caller gave it: a
+/// branch, tag, commit or revision expression (`origin/main`, `HEAD~2`), never
+/// an option. Printable ASCII without spaces, at most 200 bytes, no leading `-`.
+pub fn validate_base(base: &str) -> Result<(), WorktreeError> {
+    let ok = !base.is_empty()
+        && base.len() <= 200
+        && !base.starts_with('-')
+        && base.bytes().all(|b| b.is_ascii_graphic());
+    if ok {
+        Ok(())
+    } else {
+        Err(WorktreeError::Refused(format!("not a usable worktree base: {base:?}")))
+    }
+}
+
 /// Creates the worktree for session `name` on `branch` (new from `base`, or
 /// the existing branch) and records it.
 pub fn create(
@@ -176,13 +191,17 @@ pub fn create(
         &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")],
     );
     if branch_exists {
-        git(repo, &["worktree", "add", &path_str, branch])?;
+        git(repo, &["worktree", "add", "--", &path_str, branch])?;
     } else {
         let base = match base {
-            Some(b) => b.to_string(),
+            Some(b) => {
+                validate_base(b)?;
+                b.to_string()
+            }
             None => default_base(repo).unwrap_or_else(|| "HEAD".to_string()),
         };
-        git(repo, &["worktree", "add", "-b", branch, &path_str, &base])?;
+        // `--` so neither the path nor the base can be read as an option.
+        git(repo, &["worktree", "add", "-b", branch, "--", &path_str, &base])?;
     }
     let mut records = load_records(repo);
     records.insert(
@@ -429,6 +448,20 @@ mod tests {
         assert!(!path.exists());
         assert!(load_records(&repo).is_empty());
         assert!(!git_ok(&repo, &["rev-parse", "--verify", "--quiet", "refs/heads/team/tester"]));
+    }
+
+    #[test]
+    fn a_base_is_never_an_option() {
+        let (_tmp, repo) = repo();
+        for bad in ["--detach", "-b", "", "main with space", "main\n", &"a".repeat(201)] {
+            assert!(
+                matches!(create(&repo, "x", "team/x", Some(bad)), Err(WorktreeError::Refused(_))),
+                "{bad:?}"
+            );
+        }
+        assert!(!repo.parent().unwrap().join("proj-x").exists());
+        let path = create(&repo, "x", "team/x", Some("HEAD~0")).unwrap();
+        assert!(path.join("a.txt").exists());
     }
 
     #[test]

@@ -677,6 +677,12 @@ read_dmg_info() {
     if [[ "$BUILT_TEAM" == "not set" ]]; then
         BUILT_TEAM=""
     fi
+    # A shipped build must not let other processes attach to it (script/Release-Entitlements.plist).
+    if { codesign -d --entitlements - "$app" 2>/dev/null || true; } | grep -q "com.apple.security.get-task-allow"; then
+        detach_dmg
+        echo "$DMG_PATH is signed with com.apple.security.get-task-allow (a debug signature); refusing to publish it." >&2
+        exit 1
+    fi
     local notice="$app/Contents/Resources/NOTICE"
     if [[ -f "$notice" ]]; then
         BUILT_COMMIT="$(notice_commit "$notice")"
